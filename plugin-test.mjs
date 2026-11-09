@@ -106,7 +106,7 @@ before(async () => {
   mkIndex();
   process.env.DSH_HOME = dsh; // 宿主半身经 resolveDshHome() 读它
   const mod = await import('file://' + PLUGIN.replace(/\\/g, '/'));
-  assert.equal(mod.name, 'dsh-session-manager');
+  assert.equal(mod.name, 'dsh-session-consistency');
   assert.deepEqual(mod.inject, ['webServer']);
   const registered = [];
   const ctx = {

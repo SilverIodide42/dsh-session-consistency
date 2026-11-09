@@ -54,7 +54,7 @@ function makeEnv() {
 
 test('工厂可执行且注册 id 正确', () => {
   const { loaded } = makeEnv();
-  assert.deepEqual(loaded, ['dsh-session-manager']);
+  assert.deepEqual(loaded, ['dsh-session-consistency']);
 });
 
 test('apply() 在假 ctx 上注册三个 slot，且面板可渲染', () => {
@@ -151,7 +151,7 @@ test('apply() 在假 ctx 上注册三个 slot，且面板可渲染', () => {
   assert.ok(css.includes('.dsm-sm-scrollPage'), 'CSS 含滚动容器类（防面板无法滑动）');
   assert.ok(/dsm-sm-scrollPage\{[^}]*overflow:auto/.test(css), 'scrollPage 必须 overflow:auto');
   assert.ok(/dsm-sm-scrollPage\{[^}]*height:100%/.test(css), 'scrollPage 必须 height:100%');
-  assert.ok(styleTags[0].dataset.pluginCss === 'dsh-session-manager/panel.css', 'data-plugin-css 标识正确');
+  assert.ok(styleTags[0].dataset.pluginCss === 'dsh-session-consistency/panel.css', 'data-plugin-css 标识正确');
   // 源码断言：toolbar 分段控件由 Button(ghost) 构成（官方形状）
   assert.ok(code.includes('dsm-sm_segItem') && code.includes('variant: "ghost"'), '分段控件 = Button ghost 形状');
 });

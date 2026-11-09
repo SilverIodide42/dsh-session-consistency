@@ -70,7 +70,7 @@ import('./plugin/index.js').then(async (m) => {
     ['会话页完整(非loading)', !s.includes('dsm-sm_loading')],
     ['toolbar + segmented control', s.includes('dsm-sm_group') && s.includes('dsm-sm_segItem')],
     ['Button 组件通路', buttonInTree],
-    ['style 标识唯一正确', styleTags.every((t) => t.dataset.pluginCss === 'dsh-session-manager/panel.css') && styleTags.length >= 1],
+    ['style 标识唯一正确', styleTags.every((t) => t.dataset.pluginCss === 'dsh-session-consistency/panel.css') && styleTags.length >= 1],
     ['统计条（会话页）', s.includes('dsm-sm_stats') && s.includes('dsm-sm_stat')],
     ['行列表', s.includes('dsm-sm_row')],
     ['状态徽章', s.includes('dsm-sm_badge')],

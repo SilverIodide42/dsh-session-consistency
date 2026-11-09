@@ -1,5 +1,5 @@
 /**
- * dsh-session-manager — host half.
+ * dsh-session-consistency — host half.
  *
  * Mounts one prefixed HTTP route (/session-manager/api) on the host
  * webServer and serves the three-location consistency model, the
@@ -32,7 +32,7 @@ import os from 'node:os'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 
-export const name = 'dsh-session-manager'
+export const name = 'dsh-session-consistency'
 
 export const inject = ['webServer']
 
@@ -624,5 +624,5 @@ export function apply(ctx) {
   ctx.effect(() => {
     const route = buildRoute(ctx)
     return ctx.webServer.register(route)
-  }, 'dsh-session-manager: routes')
+  }, 'dsh-session-consistency: routes')
 }

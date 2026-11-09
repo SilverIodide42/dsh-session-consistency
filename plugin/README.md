@@ -1,4 +1,4 @@
-# dsh-session-manager（插件版）
+# dsh-session-consistency（插件版）
 
 DSH 会话管理 Web GUI 插件：在浏览器里做三处一致性检查、备份与清理。与 [CLI 版](../README.md) 同一状态模型，宿主逻辑内联移植（不依赖 CLI 文件）。
 
@@ -33,10 +33,10 @@ plugin/
 
 ```powershell
 # 1. 复制
-Copy-Item -Recurse tools\dsh-session-manager\plugin C:\Users\ZYY\.dsh\profiles\desktop\node_modules\dsh-session-manager
+Copy-Item -Recurse tools\dsh-session-consistency\plugin C:\Users\ZYY\.dsh\profiles\desktop\node_modules\dsh-session-manager
 # 2. profile package.json：
-#    dependencies += "dsh-session-manager": "file:./node_modules/dsh-session-manager"
-#    dsh.profile.bundles += "dsh-session-manager"
+#    dependencies += "dsh-session-consistency": "file:./node_modules/dsh-session-manager"
+#    dsh.profile.bundles += "dsh-session-consistency"
 # 3. 重启 DSH（Desktop 宿主读 profile 装配组合树）
 ```
 

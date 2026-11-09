@@ -1,4 +1,4 @@
-# dsh-session-manager
+# dsh-session-consistency
 
 > DSH（DeepSeek Harness）会话管理插件 — Web GUI 侧栏面板，用于检查三处会话存储的一致性、归档/恢复会话、永久清理归档残留，以及工作区体检。
 
@@ -86,13 +86,13 @@ DSH 的归档语义（app.asar 逆向 + 真机实验确认）：`archivedSession
 
 ### 方式一：下载预打包文件（推荐）
 
-从 [Releases](https://github.com/SilverIodide42/dsh-session-manager/releases/latest) 下载 `dsh-session-manager-0.1.0.tgz`，解压到 DSH profile 的 `node_modules`：
+从 [Releases](https://github.com/SilverIodide42/dsh-session-manager/releases/latest) 下载 `dsh-session-consistency-0.1.0.tgz`，解压到 DSH profile 的 `node_modules`：
 
 ```powershell
 # 解压 tgz 到 profile（tgz 内已含 package/ 前缀）
 $dst = "$env:USERPROFILE\.dsh\profiles\desktop\node_modules\dsh-session-manager"
 New-Item -ItemType Directory -Force -Path $dst | Out-Null
-tar -xzf dsh-session-manager-0.1.0.tgz -C $tmp; Copy-Item "$tmp\package\*" $dst -Recurse -Force
+tar -xzf dsh-session-consistency-0.1.0.tgz -C $tmp; Copy-Item "$tmp\package\*" $dst -Recurse -Force
 ```
 
 ### 方式二：从仓库直接装
@@ -109,8 +109,8 @@ Copy-Item plugin\* "$env:USERPROFILE\.dsh\profiles\desktop\node_modules\dsh-sess
 
 ### 首次安装的额外两步
 
-1. profile `package.json` 的 `dependencies` 加 `"dsh-session-manager": "file:./node_modules/dsh-session-manager"`
-2. profile `package.json` 的 `dsh.profile.bundles` 数组加 `"dsh-session-manager"`
+1. profile `package.json` 的 `dependencies` 加 `"dsh-session-consistency": "file:./node_modules/dsh-session-manager"`
+2. profile `package.json` 的 `dsh.profile.bundles` 数组加 `"dsh-session-consistency"`
 
 然后**重启 DSH**（宿主半生效）；仅更新 client 半时刷新页面即可。
 

@@ -1,5 +1,5 @@
 /**
- * dsh-session-manager — browser half.
+ * dsh-session-consistency — browser half.
  *
  * Hand-written window.__ModuleLoader__ factory (same wrapper shape as the
  * tsdown output of dsh-usage-statistics-panel / dshmarket): the host module
@@ -20,7 +20,7 @@
  * t() falls back key→key when the host locale service is absent.
  */
 window.__ModuleLoader__.load({
-	id: "dsh-session-manager",
+	id: "dsh-session-consistency",
 	factory: (require) => {
 		var module = { exports: {} };
 		var exports = module.exports;
@@ -40,7 +40,7 @@ window.__ModuleLoader__.load({
 			return parts.join(" ");
 		};
 
-		var BUNDLE_NAME = "dsh-session-manager";
+		var BUNDLE_NAME = "dsh-session-consistency";
 		var PANEL_ID = "session-manager";
 		var PANEL_ORDER = 31; // right after usage-stats (30)
 		var LOCALE_NS = "sessionManager";
@@ -322,12 +322,12 @@ window.__ModuleLoader__.load({
 			".dsm-sm_bannerRow{display:flex;align-items:stretch;gap:0}",
 			".dsm-sm_bannerRow > .dsm-sm_okBanner,.dsm-sm_bannerRow > .dsm-sm_errorBanner{flex:1 1 auto;min-width:0}",
 		].join("");
-		var cssTagId = "dsh-session-manager/panel.css";
+		var cssTagId = "dsh-session-consistency/panel.css";
 		function ensureCss() {
 			if (typeof document === "undefined") return;
 			if (document.querySelector("style[data-plugin-css=" + JSON.stringify(cssTagId) + "]") === null) {
 				var tag = document.createElement("style");
-				tag.dataset.plugin = "dsh-session-manager";
+				tag.dataset.plugin = "dsh-session-consistency";
 				tag.dataset.pluginCss = cssTagId;
 				tag.textContent = CSS;
 				document.head.appendChild(tag);
@@ -945,7 +945,7 @@ window.__ModuleLoader__.load({
 					var offZh = ctx.locale.register(LOCALE_NS, "zh", zh);
 					var offEn = ctx.locale.register(LOCALE_NS, "en", en);
 					return function () { offZh(); offEn(); };
-				}, "dsh-session-manager: dictionaries");
+				}, "dsh-session-consistency: dictionaries");
 			}
 
 			var t = ctx.locale && typeof ctx.locale.bind === "function"
@@ -961,7 +961,7 @@ window.__ModuleLoader__.load({
 						if (next === PANEL_ID && lastPanelId !== PANEL_ID) previousPanelId = lastPanelId;
 						lastPanelId = next;
 					});
-				}, "dsh-session-manager: panel history");
+				}, "dsh-session-consistency: panel history");
 			}
 			var goBack = function () {
 				if (previousPanelId === null || previousPanelId === PANEL_ID) {
