@@ -3,6 +3,7 @@
 > DSH（DeepSeek Harness）会话管理插件 — Web GUI 侧栏面板，用于检查三处会话存储的一致性、归档/恢复会话、永久清理归档残留，以及工作区体检。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/SilverIodide42/dsh-session-manager?color=blue)](https://github.com/SilverIodide42/dsh-session-manager/releases/latest)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org)
 
 ## 这是什么
@@ -83,13 +84,37 @@ DSH 的归档语义（app.asar 逆向 + 真机实验确认）：`archivedSession
 
 ## 安装 / 更新
 
+### 方式一：下载预打包文件（推荐）
+
+从 [Releases](https://github.com/SilverIodide42/dsh-session-manager/releases/latest) 下载 `dsh-session-manager-0.1.0.tgz`，解压到 DSH profile 的 `node_modules`：
+
 ```powershell
-# 复制插件目录到 profile（无需 rename-core，自动命名功能已移除）
-Copy-Item plugin\* C:\Users\ZYY\.dsh\profiles\desktop\node_modules\dsh-session-manager\ -Force
-# 重启 DSH 生效
+# 解压 tgz 到 profile（tgz 内已含 package/ 前缀）
+$dst = "$env:USERPROFILE\.dsh\profiles\desktop\node_modules\dsh-session-manager"
+New-Item -ItemType Directory -Force -Path $dst | Out-Null
+tar -xzf dsh-session-manager-0.1.0.tgz -C $tmp; Copy-Item "$tmp\package\*" $dst -Recurse -Force
 ```
 
-首次安装还需：profile `package.json` 加 `"dsh-session-manager": "file:./node_modules/dsh-session-manager"` 依赖与 `dsh.profile.bundles` 数组条目。
+### 方式二：从仓库直接装
+
+```bash
+pnpm add github:SilverIodide42/dsh-session-manager#v0.1.0
+```
+
+### 方式三：从源码复制（开发调试）
+
+```powershell
+Copy-Item plugin\* "$env:USERPROFILE\.dsh\profiles\desktop\node_modules\dsh-session-manager\" -Force
+```
+
+### 首次安装的额外两步
+
+1. profile `package.json` 的 `dependencies` 加 `"dsh-session-manager": "file:./node_modules/dsh-session-manager"`
+2. profile `package.json` 的 `dsh.profile.bundles` 数组加 `"dsh-session-manager"`
+
+然后**重启 DSH**（宿主半生效）；仅更新 client 半时刷新页面即可。
+
+> ⚠️ 不要在 profile 目录跑完整 `pnpm install` —— 会重建 `node_modules` 并把自引用的 `file:` 依赖掏空。用 `--lockfile-only` 或手动复制。
 
 安全：loopback Host 围栏 + `sec-fetch-site: cross-site` 拒绝 + Origin 同源校验；purge/delete 恒先备份。
 

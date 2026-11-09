@@ -20,3 +20,7 @@ desktop.ini
 # Local env
 .env
 .env.local
+
+# Build artifacts
+*.tgz
+*.tar.gz
