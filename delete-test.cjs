@@ -19,7 +19,7 @@ for (const id of [ID_OK, ID_LIVE]) {
 }
 fs.mkdirSync(path.join(dsh, 'storages'), { recursive: true });
 fs.writeFileSync(path.join(dsh, 'storages', 'workspace.json'), JSON.stringify({
-  global: { defaultWorkspaceId: 'ws-1', archivedSessionIds: [ID_OK, ID_MISS], pinnedSessionIds: [] },
+  global: { defaultWorkspaceId: 'ws-1', archivedSessionIds: [ID_OK, ID_MISS], pinnedSessionIds: [ID_OK] },
   tables: { workspaces: { 'ws-1': { path: root, title: 'w', sessionIds: [ID_OK, ID_LIVE, ID_MISS] } } },
 }, null, 2));
 
@@ -48,11 +48,14 @@ import('./index.js').then(async (m) => {
   // 2) apply 真删
   const app = await post('/session-consistency/api/delete', { ids: [ID_OK, ID_LIVE], apply: true });
   check('apply 删除 1 个', app.ok && app.value.deleted === 1);
+  check('返回释放字节数（前端提示用）', app.value.diskBytes === 500);
   check('会话目录已删', !fs.existsSync(path.join(dsh, 'sessions', 'ws-k', ID_OK)));
   check('projcache 已删', !fs.existsSync(path.join(dsh, 'storages', 'session_projcache', 'sessions', ID_OK + '.json')));
   const idx = JSON.parse(fs.readFileSync(path.join(dsh, 'storages', 'workspace.json'), 'utf8'));
   check('索引 archived 已清', !idx.global.archivedSessionIds.includes(ID_OK));
+  check('索引 pinned 已清', !idx.global.pinnedSessionIds.includes(ID_OK));
   check('索引 sessionIds 已清', !Object.values(idx.tables.workspaces)[0].sessionIds.includes(ID_OK));
+  check('索引无 .before 残留', !fs.existsSync(path.join(dsh, 'storages', 'workspace.json.before')));
   check('未归档会话完好', fs.existsSync(path.join(dsh, 'sessions', 'ws-k', ID_LIVE)));
   check('备份已生成', fs.existsSync(app.value.backupDir) && fs.existsSync(path.join(app.value.backupDir, 'workspace.json.before')));
   check('备份含会话目录', fs.existsSync(path.join(app.value.backupDir, 'sessions', ID_OK)));

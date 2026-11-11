@@ -25,9 +25,12 @@ const sb = {
   window: { __ModuleLoader__: { load(d) { const rq = (id) => { if (id === 'react') return react; if (id === '@deepseek-ai/dsh-client-ui-primitives') return { Button: (p) => ({ t: 'Button', p }) }; throw new Error(id); }; Object.assign(saved, d.factory(rq)); } } },
   navigator: { language: 'zh-CN' },
   console,
-  fetch: (u) => Promise.resolve({ json: () => Promise.resolve(u.includes('/plan')
-    ? { ok: true, value: { targets: [], totals: { sessions: 0, diskBytes: 0 } } }
-    : { ok: true, value: { dshDir: 'X', sessions: SESSIONS, summary: { total: 3, active: 3, archived: 0, tombstone: 0, orphan: 0, missing: 0 } } }) }),
+  fetch: (u) => {
+    const j = u.includes('/plan')
+      ? { ok: true, value: { targets: [], totals: { sessions: 0, diskBytes: 0, breakdown: { archived: 0, tombstone: 0, missing: 0, orphan: 0 } } } }
+      : { ok: true, value: { dshDir: 'X', sessions: SESSIONS, summary: { total: 3, active: 3, archived: 0, tombstone: 0, orphan: 0, missing: 0 } } };
+    return Promise.resolve({ status: 200, json: () => Promise.resolve(j), text: () => Promise.resolve(JSON.stringify(j)) });
+  },
   document: {
     querySelector: () => null,
     getElementById: () => null,
@@ -92,6 +95,22 @@ const check = (n, c) => { console.log((c ? '✔' : '✖') + ' ' + n); c ? pass++
 
   // 7. 无内联样式
   check('仍无内联 style', (t3.match(/"style":/g) || []).length === 0);
+
+  // 8. 空态给出「清空筛选」出口（不再只让用户自己猜）
+  check('筛选空态带清空筛选按钮', t3.includes('清空筛选'));
+
+  // 9. 静默刷新不得清掉刚设置的成功提示（回归：以前 refresh(true) 立刻 setMessage(null)）
+  check('静默刷新保留成功提示', /if \(isSilent\) setRefreshing\(true\);\s*else \{ setLoading\(true\); setMessage\(null\); setError\(null\); \}/.test(code));
+
+  // 10. 永久删除先 dry-run 预览再确认（避免确认框数字与实际不符）
+  check('删除先 dry-run 预览', code.includes('api("delete", { ids: selIds })') && code.includes('preview.skipped'));
+
+  // 11. 无数据会话禁用归档/恢复
+  check('无数据会话禁用归档', code.includes('disabled: isBusy || noData') && code.includes('noArchiveData'));
+
+  // 12. 清理卡显示残留分类与孤儿提示
+  check('清理卡显示残留分类', code.includes('purgeBreakArchived') && code.includes('purgeBdText'));
+  check('孤儿未勾选时给出提示', code.includes('purgeOrphanHint'));
 
   console.log(`\n${pass}/${pass + fail} 通过`);
   process.exit(fail ? 1 : 0);

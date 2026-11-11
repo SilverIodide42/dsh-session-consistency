@@ -125,33 +125,45 @@ function readIndex(dshDir) {
 function buildReport(dshDir) {
   const dirs = scanSessionDirs(dshDir)
   const cache = scanProjcache(dshDir)
-  const index = readIndex(dshDir)
+  let index
+  try { index = readIndex(dshDir) }
+  catch (e) { return { error: e.message } }
   if (!index) return { error: 'workspace.json not found under ' + dshDir }
   const allIds = new Set([...dirs.keys(), ...cache.keys(), ...index.activeMap.keys(), ...index.archived])
   const sessions = []
   for (const id of allIds) {
     const d = dirs.get(id) ?? null
     const c = cache.get(id) ?? null
-    const isActive = index.activeMap.has(id)
-    const isArchived = index.archived.has(id)
+    const inIndex = index.activeMap.has(id)
+    const hidden = index.archived.has(id)
+    const onDisk = !!d
+    const inCache = !!c
+    const hasData = onDisk || inCache
+    // 归档优先：真实 DSH 数据里 archivedSessionIds 是 sessionIds 的子集，
+    // 先判 active 会把所有归档会话误报成 active（归档数恒为 0）。
     let status
-    if (isActive && (d || c)) status = 'active'
-    else if (isActive) status = 'missing'
-    else if (isArchived && (d || c)) status = 'archived'
-    else if (isArchived) status = 'tombstone'
+    if (hidden) status = hasData ? 'archived' : 'tombstone'
+    else if (inIndex) status = hasData ? 'active' : 'missing'
     else status = 'orphan'
+    // 残留 = 没有会话目录的隐藏会话（只剩缓存/索引）、墓碑、陈旧索引。
+    // 目录还在的归档会话是「用户归档的完整会话」，不参与批量清理。
+    const residual = (status === 'archived' && !onDisk) || status === 'tombstone' || status === 'missing'
     sessions.push({
       id,
       status,
+      hidden,
+      inIndex,
+      residual,
       // 归档语义（2026-10-25 实测）：archivedSessionIds = GUI 隐藏集；
       // sessionIds 含全部注册会话（含被隐藏的）。hidden = GUI 侧栏不显示。
-      hidden: isArchived,
-      onDisk: !!d,
+      onDisk,
       diskSize: d?.size ?? null,
       mtime: d?.mtimeMs ?? c?.mtimeMs ?? null,
-      inCache: !!c,
+      inCache,
       title: c?.meta?.title ?? null,
       createdAt: c?.meta?.createdAt ?? null,
+      workspaceKey: d?.workspaceKey ?? null,
+      workspaceTitles: index.activeMap.get(id) ?? [],
     })
   }
   sessions.sort((a, b) => (b.mtime ?? 0) - (a.mtime ?? 0))
@@ -164,6 +176,7 @@ function buildReport(dshDir) {
       total: sessions.length,
       active: by('active'),
       archived: by('archived'),
+      archivedResidual: sessions.filter(s => s.status === 'archived' && s.residual).length,
       tombstone: by('tombstone'),
       orphan: by('orphan'),
       missing: by('missing'),
@@ -172,8 +185,7 @@ function buildReport(dshDir) {
 }
 
 function collectPurgeTargets(report, { includeOrphans = false } = {}) {
-  const base = s => s.status === 'archived' || s.status === 'tombstone' || s.status === 'missing'
-  return report.sessions.filter(s => base(s) || (includeOrphans && s.status === 'orphan'))
+  return report.sessions.filter(s => s.residual || (includeOrphans && s.status === 'orphan'))
 }
 
 function buildPurgePlan(dshDir, { includeOrphans = false } = {}) {
@@ -203,6 +215,12 @@ function buildPurgePlan(dshDir, { includeOrphans = false } = {}) {
       dirCount: targets.filter(t => t.diskDir).length,
       cacheCount: targets.filter(t => t.cacheFile).length,
       indexEntries: targets.length,
+      breakdown: {
+        archived: targets.filter(t => t.status === 'archived').length,
+        tombstone: targets.filter(t => t.status === 'tombstone').length,
+        missing: targets.filter(t => t.status === 'missing').length,
+        orphan: targets.filter(t => t.status === 'orphan').length,
+      },
     },
   }
 }
@@ -213,6 +231,12 @@ function timeStamp() {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
 }
 
+/** Backup stamps must be unique per operation: two purges inside the same
+ *  second used to resolve to the same directory and merge their backups. */
+function backupStamp() {
+  return `${timeStamp()}-${String(new Date().getMilliseconds()).padStart(3, '0')}-${Math.random().toString(36).slice(2, 6)}`
+}
+
 /** Backup root: <workspace>\backup\archived-sessions-<stamp>\ when the index
  *  names a workspace path, else <dsh>\backup\... (same default as the CLI). */
 function resolveBackupDir(dshDir, indexFile) {
@@ -220,9 +244,9 @@ function resolveBackupDir(dshDir, indexFile) {
     const raw = JSON.parse(fs.readFileSync(indexFile, 'utf8'))
     const defId = raw?.global?.defaultWorkspaceId
     const ws = raw?.tables?.workspaces?.[defId] ?? Object.values(raw?.tables?.workspaces ?? {})[0]
-    if (ws?.path) return path.join(ws.path, 'backup', `archived-sessions-${timeStamp()}`)
+    if (ws?.path) return path.join(ws.path, 'backup', `archived-sessions-${backupStamp()}`)
   } catch { /* fall through */ }
-  return path.join(dshDir, 'backup', `archived-sessions-${timeStamp()}`)
+  return path.join(dshDir, 'backup', `archived-sessions-${backupStamp()}`)
 }
 
 function backupTarget(t, backupDir) {
@@ -236,9 +260,51 @@ function backupTarget(t, backupDir) {
   }
 }
 
+/** Rewrite workspace.json atomically: a crash must not leave a half-written
+ *  index behind. The rollback copy lives in the backup dir, not in storages/. */
+function writeIndexAtomic(file, raw) {
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`
+  fs.writeFileSync(tmp, JSON.stringify(raw, null, 2) + '\n', 'utf8')
+  try {
+    fs.renameSync(tmp, file)
+  } catch (e) {
+    try { fs.rmSync(tmp, { force: true }) } catch { /* ignore */ }
+    throw e
+  }
+}
+
+/** Remove ids from every index list that can keep a dead session alive. */
+function removeIdsFromIndex(raw, ids) {
+  let removedArchived = 0
+  let removedSessionIds = 0
+  let removedPinned = 0
+  const drop = (list) => {
+    if (!Array.isArray(list)) return list
+    return list.filter(x => !ids.has(x))
+  }
+  if (Array.isArray(raw.global?.archivedSessionIds)) {
+    const before = raw.global.archivedSessionIds.length
+    raw.global.archivedSessionIds = drop(raw.global.archivedSessionIds)
+    removedArchived = before - raw.global.archivedSessionIds.length
+  }
+  if (Array.isArray(raw.global?.pinnedSessionIds)) {
+    const before = raw.global.pinnedSessionIds.length
+    raw.global.pinnedSessionIds = drop(raw.global.pinnedSessionIds)
+    removedPinned = before - raw.global.pinnedSessionIds.length
+  }
+  for (const ws of Object.values(raw.tables?.workspaces ?? {})) {
+    if (Array.isArray(ws.sessionIds)) {
+      const before = ws.sessionIds.length
+      ws.sessionIds = drop(ws.sessionIds)
+      removedSessionIds += before - ws.sessionIds.length
+    }
+  }
+  return { removedArchived, removedSessionIds, removedPinned }
+}
+
 function applyPurge(plan, backupDir) {
-  for (const t of plan.targets) backupTarget(t, backupDir)
   fs.mkdirSync(backupDir, { recursive: true })
+  for (const t of plan.targets) backupTarget(t, backupDir)
   fs.copyFileSync(plan.indexFile, path.join(backupDir, 'workspace.json.before'))
   for (const t of plan.targets) {
     if (t.diskDir && fs.existsSync(t.diskDir)) fs.rmSync(t.diskDir, { recursive: true, force: true })
@@ -246,23 +312,16 @@ function applyPurge(plan, backupDir) {
   }
   const raw = JSON.parse(fs.readFileSync(plan.indexFile, 'utf8'))
   const ids = new Set(plan.targets.map(t => t.id))
-  let removedArchived = 0
-  let removedSessionIds = 0
-  if (Array.isArray(raw.global?.archivedSessionIds)) {
-    const before = raw.global.archivedSessionIds.length
-    raw.global.archivedSessionIds = raw.global.archivedSessionIds.filter(x => !ids.has(x))
-    removedArchived = before - raw.global.archivedSessionIds.length
+  const removed = removeIdsFromIndex(raw, ids)
+  writeIndexAtomic(plan.indexFile, raw)
+  return {
+    purged: plan.targets.length,
+    diskBytes: plan.targets.reduce((n, t) => n + (t.diskSize ?? 0), 0),
+    removedArchived: removed.removedArchived,
+    removedSessionIds: removed.removedSessionIds,
+    removedPinned: removed.removedPinned,
+    backupDir,
   }
-  for (const ws of Object.values(raw.tables?.workspaces ?? {})) {
-    if (Array.isArray(ws.sessionIds)) {
-      const before = ws.sessionIds.length
-      ws.sessionIds = ws.sessionIds.filter(x => !ids.has(x))
-      removedSessionIds += before - ws.sessionIds.length
-    }
-  }
-  fs.copyFileSync(plan.indexFile, plan.indexFile + '.before')
-  fs.writeFileSync(plan.indexFile, JSON.stringify(raw, null, 2) + '\n', 'utf8')
-  return { purged: plan.targets.length, removedArchived, removedSessionIds, backupDir }
 }
 
 // ---------- 永久删除（归档会话清理；三处 + 恒先备份） ----------
@@ -311,8 +370,8 @@ function buildDeletePlan(dshDir, ids, { includeUnhidden = false } = {}) {
 }
 
 function applyDelete(plan, backupDir) {
-  for (const t of plan.targets) backupTarget(t, backupDir)
   fs.mkdirSync(backupDir, { recursive: true })
+  for (const t of plan.targets) backupTarget(t, backupDir)
   fs.copyFileSync(plan.indexFile, path.join(backupDir, 'workspace.json.before'))
   let removedDirs = 0
   let removedCache = 0
@@ -322,27 +381,16 @@ function applyDelete(plan, backupDir) {
   }
   const raw = JSON.parse(fs.readFileSync(plan.indexFile, 'utf8'))
   const ids = new Set(plan.targets.map(t => t.id))
-  let removedArchived = 0
-  let removedSessionIds = 0
-  if (Array.isArray(raw.global?.archivedSessionIds)) {
-    const before = raw.global.archivedSessionIds.length
-    raw.global.archivedSessionIds = raw.global.archivedSessionIds.filter(x => !ids.has(x))
-    removedArchived = before - raw.global.archivedSessionIds.length
-  }
-  for (const ws of Object.values(raw.tables?.workspaces ?? {})) {
-    if (Array.isArray(ws.sessionIds)) {
-      const before = ws.sessionIds.length
-      ws.sessionIds = ws.sessionIds.filter(x => !ids.has(x))
-      removedSessionIds += before - ws.sessionIds.length
-    }
-  }
-  fs.writeFileSync(plan.indexFile, JSON.stringify(raw, null, 2) + '\n', 'utf8')
+  const removed = removeIdsFromIndex(raw, ids)
+  writeIndexAtomic(plan.indexFile, raw)
   return {
     deleted: plan.targets.length,
     removedDirs,
     removedCache,
-    removedArchived,
-    removedSessionIds,
+    diskBytes: plan.targets.reduce((n, t) => n + (t.diskSize ?? 0), 0),
+    removedArchived: removed.removedArchived,
+    removedSessionIds: removed.removedSessionIds,
+    removedPinned: removed.removedPinned,
     backupDir,
   }
 }
@@ -362,10 +410,11 @@ function resolveWorkspaceRoot(dshDir) {
 }
 
 /** 动态加载 tools/workspace-doctor 的 lib（工作区里存在时）；缓存 import 结果。
- *  找不到时返回 null（面板显示"需要 workspace-doctor"）。 */
+ *  找不到时也缓存，但只缓存 30s——用户补装 workspace-doctor 后无需重启宿主。 */
 const doctorLibCache = new Map()
 async function loadDoctorLib(root) {
-  if (doctorLibCache.has(root)) return doctorLibCache.get(root)
+  const cached = doctorLibCache.get(root)
+  if (cached && (cached.lib !== null || Date.now() - cached.at < 30_000)) return cached.lib
   let lib = null
   try {
     const base = path.join(root, 'tools', 'workspace-doctor', 'lib')
@@ -387,7 +436,7 @@ async function loadDoctorLib(root) {
       healthScore: house.healthScore,
     }
   } catch { lib = null }
-  doctorLibCache.set(root, lib)
+  doctorLibCache.set(root, { lib, at: Date.now() })
   return lib
 }
 
@@ -442,7 +491,7 @@ function detectHostBase(ctx) {
 /** 手铸 dsh-auth cookie（与宿主同款 HMAC，凭 .credentials.yaml 的 browser-session secret） */
 function mintCookie(base) {
   const { createHash, createHmac } = createRequire(import.meta.url)('node:crypto')
-  const credPath = path.join(os.homedir(), '.dsh', '.credentials.yaml')
+  const credPath = path.join(resolveDshHome(), '.credentials.yaml')
   const raw = fs.readFileSync(credPath, 'utf8')
   const keyIdx = raw.indexOf('client-connection/browser-session')
   const m = keyIdx >= 0 ? raw.slice(keyIdx).match(/secret:\s*([A-Za-z0-9_-]+)\s/) : null
@@ -457,14 +506,28 @@ function mintCookie(base) {
   return `${cookieName}=v1.${body}.${sig}`
 }
 
-async function hostRpc(ctx, method, request) {
-  const base = detectHostBase(ctx)
-  if (!base) throw new Error('host web server port unknown')
-  const cookie = mintCookie(base)
-  const r = await fetch(`${base}/api/${method}`, {
+/** The plugin route is served by the host's own web server, so the request's
+ *  Host header is the authoritative origin. Guessing from env/ctx failed when
+ *  the port was absent from both. */
+function hostBaseFromReq(req) {
+  const host = req?.headers?.host
+  if (!host) return null
+  try { return 'http://' + new URL(`http://${host}`).host } catch { return null }
+}
+
+let rpcSeq = 0
+async function hostRpc(ctx, base, method, request) {
+  // Prefer an explicitly known host origin (ctx/DSH_WEB_URL) when available;
+  // otherwise fall back to the Host header of the request being served.
+  const target = detectHostBase(ctx) || base
+  if (!target) throw new Error('host web server port unknown')
+  const cookie = mintCookie(target)
+  const r = await fetch(`${target}/api/${method}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', cookie, origin: base },
-    body: JSON.stringify({ type: 'client-request', rpcId: 'sm-' + Date.now(), method, payload: { args: { request } } }),
+    headers: { 'content-type': 'application/json', cookie, origin: target },
+    body: JSON.stringify({ type: 'client-request', rpcId: 'sm-' + Date.now() + '-' + (++rpcSeq), method, payload: { args: { request } } }),
+    // A hung host must not leave the panel's per-row busy state stuck forever.
+    signal: AbortSignal.timeout(15_000),
   })
   const j = await r.json().catch(() => null)
   const result = j?.result
@@ -478,12 +541,12 @@ async function hostRpc(ctx, method, request) {
 /** 归档/恢复一批会话（走宿主官方 workspace/archiveSession|unarchiveSession，一致性由宿主保证）
  *  hide=true 时可选 stopActivity：宿主会先请求停止该会话的运行工作（turn/子代理/后台任务/定时）
  *  而不是以 workspace/session-active 拒绝归档。 */
-async function setArchived(ctx, ids, hide, stopActivity = false) {
+async function setArchived(ctx, base, ids, hide, stopActivity = false) {
   const method = hide ? 'workspace/archiveSession' : 'workspace/unarchiveSession'
   const results = []
   for (const id of ids) {
     try {
-      await hostRpc(ctx, method, hide ? { sessionId: id, stopActivity } : { sessionId: id })
+      await hostRpc(ctx, base, method, hide ? { sessionId: id, stopActivity } : { sessionId: id })
       results.push({ id, ok: true })
     } catch (e) {
       results.push({ id, ok: false, error: e.message })
@@ -506,7 +569,10 @@ function writeJson(res, value, status = 200) {
 
 function writeError(res, err) {
   const status = err instanceof ApiError ? err.status : 500
-  writeJson(res, { ok: false, error: { message: err instanceof ApiError ? err.message : 'internal error' } }, status)
+  // Local-only route: surface the real reason instead of a useless
+  // "internal error" banner. Stack traces are never sent.
+  const message = err instanceof ApiError ? err.message : (err instanceof Error ? err.message : String(err))
+  writeJson(res, { ok: false, error: { message } }, status)
 }
 
 async function readJsonBody(req) {
@@ -589,8 +655,8 @@ function buildRoute(ctx) {
         const body = await readJsonBody(req)
         const ids = Array.isArray(body?.ids) ? body.ids.filter((x) => typeof x === 'string') : []
         if (ids.length === 0) throw new ApiError(400, 'ids[] required')
-        if (ids.length > 100) throw new ApiError(400, 'too many ids (max 100)')
-        const value = await setArchived(ctx, ids, body?.hide !== false, body?.stopActivity !== false)
+        if (ids.length > 200) throw new ApiError(400, 'too many ids (max 200)')
+        const value = await setArchived(ctx, hostBaseFromReq(req), ids, body?.hide !== false, body?.stopActivity !== false)
         return writeJson(res, { ok: true, value })
       }
       // 永久删除（仅归档会话；dry-run 默认，apply 才真删，恒先备份）

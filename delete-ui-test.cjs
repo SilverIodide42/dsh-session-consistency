@@ -5,7 +5,7 @@ const vm = require('vm');
 
 const code = fs.readFileSync(__dirname + '/client.js', 'utf8');
 
-function render(statusValue) {
+function render(statusValue, planValue) {
   return new Promise((resolve) => {
     const boxes = [];
     let hi = 0;
@@ -32,10 +32,12 @@ function render(statusValue) {
       } } },
       navigator: { language: 'zh-CN' },
       console,
-      fetch: (url) => Promise.resolve({ json: () => Promise.resolve(
-        url.includes('/plan')
-          ? { ok: true, value: { targets: [], totals: { sessions: 0, diskBytes: 0 } } }
-          : { ok: true, value: statusValue }) }),
+      fetch: (url) => {
+        const j = url.includes('/plan')
+          ? { ok: true, value: planValue || { targets: [], totals: { sessions: 0, diskBytes: 0, breakdown: { archived: 0, tombstone: 0, missing: 0, orphan: 0 } } } }
+          : { ok: true, value: statusValue };
+        return Promise.resolve({ status: 200, json: () => Promise.resolve(j), text: () => Promise.resolve(JSON.stringify(j)) });
+      },
       document: { querySelector() { return null; }, createElement(t) { return { tagName: t, dataset: {}, textContent: '' }; }, head: { appendChild() {} } },
     };
     vm.createContext(sandbox);
@@ -84,6 +86,15 @@ const hiddenSession = (id, title, size) => ({ id, status: 'active', hidden: true
   const noHiddenCbCount = (noHidden.match(/"type":"checkbox"/g) || []).length;
   check('无隐藏会话时 checkbox = 全选表头(1) + 会话数(1)', noHiddenCbCount === 2);
   check('无隐藏会话时说明仍在', noHidden.includes('永久删除勾选的归档会话'));
+
+  // 只有孤儿、没有墓碑/陈旧索引时，也要露出「连同孤儿」开关与提示
+  const orphanOnly = await render({
+    dshDir: 'X', indexFile: 'Y',
+    sessions: [],
+    summary: { total: 1, active: 0, archived: 0, tombstone: 0, orphan: 1, missing: 0 },
+  }, { targets: [], totals: { sessions: 0, diskBytes: 0, breakdown: { archived: 0, tombstone: 0, missing: 0, orphan: 0 } } });
+  check('仅有孤儿时仍露出开关', orphanOnly.includes('连同孤儿一起清理'));
+  check('仅有孤儿时给出提示', orphanOnly.includes('另有 1 个孤儿会话'));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

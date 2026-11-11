@@ -46,30 +46,32 @@ window.__ModuleLoader__.load({
 		var LOCALE_NS = "sessionConsistency";
 
 		var zh = {
-			meta: { title: "会话管理", description: "检查 DSH 会话三处存储（会话目录 / 元数据缓存 / 索引）的一致性，备份并清理归档残留、纯墓碑与陈旧索引条目。" },
+			meta: { title: "会话管理", description: "检查 DSH 会话三处存储（会话目录 / 元数据缓存 / 索引）的一致性，先备份再清理墓碑、陈旧索引与缺会话目录的归档残留。" },
 			nav: "会话管理",
 			refresh: "刷新",
 			checking: "检查中…",
 			summaryTitle: "一致性摘要",
 			sessionsTitle: "会话列表",
-			purgeTitle: "清理",
+			purgeTitle: "清理残留",
 			status_active: "活跃",
-			status_archived: "归档残留",
+			status_archived: "已归档",
 			status_tombstone: "纯墓碑",
 			status_orphan: "孤儿",
 			status_missing: "陈旧索引",
+			residualArchived: "缺目录",
 			purgeTargets: "待清理对象",
-			purgeEmpty: "没有需要清理的对象，三方一致。",
-			purgePlanHint: "清理会先备份到 workspace 的 backup/ 目录，再删除三处数据。建议先退出其他正在运行的 DSH 实例。",
-			purgeOrphans: "连同孤儿一起清理（不在索引中的磁盘/缓存残留）",
+			purgeEmpty: "没有需要清理的残留，三处数据一致。",
+			purgePlanHint: "只清理没有会话数据的残留：墓碑、陈旧索引、缺会话目录的归档会话。数据完好的归档会话不会被动到；清理前先备份到 workspace 的 backup/。",
+			purgeOrphans: "连同孤儿一起清理（有数据但不在索引中的会话）",
 			runPurge: "执行清理",
 			purging: "清理中…",
-			purgeDone: "已清理 {n} 个会话，备份在 {dir}",
-			confirmPurge: "确认清理？该操作会先备份，但删除后需要从备份恢复。",
+			purgeDone: "已清理 {n} 个残留，释放 {size}，备份在 {dir}",
+			confirmPurge: "确认清理 {n} 个残留对象？会先备份，删除后需从备份恢复。",
 			error: "出错了",
 			total: "总计",
 			reclaimed: "预计可释放",
-			activeHint: "活跃会话不受影响（active 状态永远不会被清理）",
+			activeHint: "活跃会话与数据完好的归档会话不受影响",
+			archivedHint: "已归档 {n} 个（侧栏隐藏、数据完好，可用「隐藏中」筛选查看或恢复）",
 			modified: "修改时间",
 			size: "大小",
 			title: "标题",
@@ -77,6 +79,7 @@ window.__ModuleLoader__.load({
 			filterAll: "全部",
 			noSessions: "（无会话）",
 			noMatch: "没有匹配当前筛选的会话（试试清空搜索或切换过滤器）",
+			clearFilters: "清空筛选",
 			tabSessions: "会话",
 			tabDoctor: "体检",
 			doctorUnavailable: "体检功能需要工作区内存在 tools/workspace-doctor/lib（磁盘/重复/引用/备份/tmp 检查由它驱动）。",
@@ -93,7 +96,11 @@ window.__ModuleLoader__.load({
 			archive: "归档",
 			unarchive: "恢复",
 			archiving: "处理中…",
+			deleting: "删除中…",
 			archiveDone: "已{op} {n} 个会话",
+			archivePartial: "{ok} 个成功，{fail} 个失败",
+			archiveActiveConfirm: "归档会让宿主先停止该会话正在运行的工作（stopActivity）。确定归档「{title}」？",
+			noArchiveData: "该会话已无数据，无法归档/恢复",
 			hidden: "隐藏中",
 			hiddenHint: "「隐藏中」= 已归档：GUI 侧栏不显示，数据完好。恢复后重新出现在侧栏。",
 			filterVisible: "显示中",
@@ -102,6 +109,8 @@ window.__ModuleLoader__.load({
 			deleteSelectedN: "删除选中 ({n})",
 			deletePreview: "将永久删除：",
 			deleteConfirm: "确认永久删除 {n} 个归档会话？会先备份，但恢复需手工操作。",
+			deleteSkipped: "（另有 {n} 个未归档会话会被跳过）",
+			deleteNothingEligible: "选中的会话都不在归档中；先归档才能永久删除，或改用「清理残留」。",
 			deleteDone: "已删除 {n} 个会话（释放 {size}），备份在 {dir}",
 			deleteNothing: "没有勾选任何会话。",
 			selectAllHidden: "全选隐藏会话",
@@ -120,6 +129,10 @@ window.__ModuleLoader__.load({
 			batchUnarchive: "恢复选中",
 			batchDelete: "删除选中",
 			batchNoop: "勾选若干会话后可批量归档/恢复/删除",
+			purgeBreakArchived: "归档残留",
+			purgeBreakTombstone: "墓碑",
+			purgeBreakMissing: "陈旧索引",
+			purgeOrphanHint: "另有 {n} 个孤儿会话（有磁盘/缓存数据但不在索引中），打开上方开关可一并清理",
 			aiPromptTitle: "AI 修复提示词",
 			aiPromptHint: "把体检发现整理成一段可直接粘贴给 AI（如本助手）的修复提示词，含路径/约定/优先级，确保 AI 能正确解读并按约定清理。",
 			aiPromptGen: "生成提示词",
@@ -129,30 +142,32 @@ window.__ModuleLoader__.load({
 			aiPromptEmpty: "未发现需要 AI 介入的问题（全部 healthy）",
 		};
 		var en = {
-			meta: { title: "Session Manager", description: "Check consistency across the three DSH session stores (session dirs / projcache / index), back up and purge archived residue, tombstones and stale index entries." },
+			meta: { title: "Session Manager", description: "Check consistency across the three DSH session stores (session dirs / projcache / index), then back up and purge tombstones, stale index entries and archived residue with no session dir." },
 			nav: "Sessions",
 			refresh: "Refresh",
 			checking: "Checking…",
 			summaryTitle: "Consistency summary",
 			sessionsTitle: "Sessions",
-			purgeTitle: "Purge",
+			purgeTitle: "Purge residue",
 			status_active: "active",
-			status_archived: "archived residue",
+			status_archived: "archived",
 			status_tombstone: "tombstone",
 			status_orphan: "orphan",
 			status_missing: "stale index",
+			residualArchived: "no dir",
 			purgeTargets: "purge targets",
-			purgeEmpty: "Nothing to purge — all three locations are consistent.",
-			purgePlanHint: "Purge backs up to the workspace backup/ dir first, then deletes from all three locations. Quit other running DSH instances first.",
-			purgeOrphans: "Include orphans (disk/cache residue absent from the index)",
+			purgeEmpty: "No residue to purge — all three stores agree.",
+			purgePlanHint: "Only residue with no session data is purged: tombstones, stale index entries and archived sessions whose session dir is gone. Archived sessions with intact data are never touched. A backup is taken first.",
+			purgeOrphans: "Include orphans (data on disk/cache but absent from the index)",
 			runPurge: "Purge now",
 			purging: "Purging…",
-			purgeDone: "Purged {n} session(s); backup at {dir}",
-			confirmPurge: "Confirm purge? A backup is taken first, but restoring afterwards is manual.",
+			purgeDone: "Purged {n} residue item(s), freed {size}; backup at {dir}",
+			confirmPurge: "Purge {n} residue item(s)? A backup is taken first, but restoring afterwards is manual.",
 			error: "Error",
 			total: "total",
 			reclaimed: "reclaimable",
-			activeHint: "Active sessions are never touched",
+			activeHint: "Active sessions and archived sessions with intact data are never touched",
+			archivedHint: "{n} archived (hidden from the sidebar, data intact — use the 'hidden' filter to view or restore)",
 			modified: "modified",
 			size: "size",
 			title: "title",
@@ -160,6 +175,7 @@ window.__ModuleLoader__.load({
 			filterAll: "all",
 			noSessions: "(no sessions)",
 			noMatch: "No sessions match the current filter (try clearing the search or switching filters)",
+			clearFilters: "Clear filters",
 			tabSessions: "Sessions",
 			tabDoctor: "Doctor",
 			doctorUnavailable: "Doctor needs tools/workspace-doctor/lib in the workspace (disk/dupe/ref checks).",
@@ -176,7 +192,11 @@ window.__ModuleLoader__.load({
 			archive: "Archive",
 			unarchive: "Restore",
 			archiving: "Working…",
+			deleting: "Deleting…",
 			archiveDone: "{op} {n} session(s)",
+			archivePartial: "{ok} succeeded, {fail} failed",
+			archiveActiveConfirm: "Archiving asks the host to stop this session's running work (stopActivity). Archive \"{title}\"?",
+			noArchiveData: "This session has no data left — cannot archive or restore",
 			hidden: "hidden",
 			hiddenHint: "'hidden' = archived: not shown in the GUI sidebar, data intact. Restore to bring it back.",
 			filterVisible: "visible",
@@ -185,6 +205,8 @@ window.__ModuleLoader__.load({
 			deleteSelectedN: "Delete checked ({n})",
 			deletePreview: "Will be permanently deleted:",
 			deleteConfirm: "Permanently delete {n} archived session(s)? A backup is taken first, but restoring is manual.",
+			deleteSkipped: "({n} unarchived session(s) will be skipped)",
+			deleteNothingEligible: "None of the selected sessions is archived; archive them first, or use 'Purge residue'.",
 			deleteDone: "Deleted {n} session(s) ({size}); backup at {dir}",
 			deleteNothing: "Nothing checked.",
 			selectAllHidden: "Select all hidden",
@@ -203,6 +225,10 @@ window.__ModuleLoader__.load({
 			batchUnarchive: "Restore checked",
 			batchDelete: "Delete checked",
 			batchNoop: "Check sessions above, then batch archive / restore / delete here",
+			purgeBreakArchived: "archived residue",
+			purgeBreakTombstone: "tombstones",
+			purgeBreakMissing: "stale index",
+			purgeOrphanHint: "{n} orphan session(s) have data but no index entry — enable the switch above to include them",
 			aiPromptTitle: "AI repair prompt",
 			aiPromptHint: "Package findings into a paste-ready repair prompt for an AI (like this assistant), with paths/conventions/priorities.",
 			aiPromptGen: "Generate prompt",
@@ -365,8 +391,11 @@ window.__ModuleLoader__.load({
 				? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }
 				: {};
 			return fetch("/session-consistency/api/" + path, init).then(function (r) {
-				return r.json().then(function (j) {
-					if (!j.ok) throw new Error((j.error && j.error.message) || "api error");
+				return r.text().then(function (text) {
+					var j = null;
+					try { j = text ? JSON.parse(text) : null; }
+					catch { throw new Error("invalid JSON response (HTTP " + r.status + ")"); }
+					if (!j || !j.ok) throw new Error((j && j.error && j.error.message) || ("HTTP " + r.status));
 					return j.value;
 				});
 			});
@@ -568,15 +597,25 @@ window.__ModuleLoader__.load({
 			var includeOrphans = orphansPair[0], setIncludeOrphans = orphansPair[1];
 			var tab = tabPair[0], setTab = tabPair[1];
 
-			// silent=true：保留现有列表，仅顶部细进度条（归档/删除后用它，避免整页闪 loading）
+			// silent=true：保留现有列表与成功提示，仅顶部细进度条（归档/删除后用它，避免整页闪 loading）
+			// 注意：静默刷新不得清 message——否则刚设置的成功提示会立刻被抹掉。
 			var refresh = React.useCallback(function (silent) {
 				var isSilent = silent === true;
 				if (isSilent) setRefreshing(true);
-				else setLoading(true);
-				setError(null); setMessage(null);
+				else { setLoading(true); setMessage(null); setError(null); }
 				Promise.all([api("status"), api("plan")]).then(function (vals) {
 					setReport(vals[0]); setPlan(vals[1]);
 					setLoading(false); setRefreshing(false);
+					setSel(function (prev) {
+						var live = {};
+						for (var i = 0; i < vals[0].sessions.length; i++) live[vals[0].sessions[i].id] = true;
+						var next = {}; var changed = false;
+						for (var k in prev) {
+							if (prev[k] && live[k]) next[k] = true;
+							else if (prev[k]) changed = true;
+						}
+						return changed ? next : prev;
+					});
 				}).catch(function (e) {
 					setError(String(e && e.message || e)); setLoading(false); setRefreshing(false);
 				});
@@ -618,10 +657,11 @@ window.__ModuleLoader__.load({
 			}, [includeOrphans, loading, refreshPlan]);
 
 			var runPurge = function () {
-				if (typeof window !== "undefined" && window.confirm && !window.confirm(L("confirmPurge"))) return;
-				setBusy(true); setMessage(null);
+				var n = plan && plan.totals ? plan.totals.sessions : 0;
+				if (typeof window !== "undefined" && window.confirm && !window.confirm(fill(L("confirmPurge"), { n: n }))) return;
+				setBusy(true); setMessage(null); setError(null);
 				api("purge", { apply: true, orphans: includeOrphans }).then(function (result) {
-					setMessage(fill(L("purgeDone"), { n: result.purged, dir: result.backupDir || "backup/" }));
+					setMessage(fill(L("purgeDone"), { n: result.purged, size: fmtBytes(result.diskBytes || 0), dir: result.backupDir || "backup/" }));
 					refresh(true);
 				}).catch(function (e) {
 					setError(String(e && e.message || e));
@@ -633,22 +673,31 @@ window.__ModuleLoader__.load({
 			var archBusyPair = React.useState(null); // 正在处理的会话 id
 			var archBusy = archBusyPair[0], setArchBusy = archBusyPair[1];
 			var setArchived = function (s) {
+				if (!s.onDisk) { setError(L("noArchiveData")); return; }
 				var hide = !s.hidden;
 				var doIt = function () {
+					setError(null); setMessage(null);
 					setArchBusy(s.id);
 					api("archive", { ids: [s.id], hide: hide }).then(function (r) {
 						var results = r.results || [];
 						var okCount = results.filter(function (x) { return x.ok; }).length;
-						var firstErr = results.find(function (x) { return !x.ok; });
-						if (okCount === 0 && firstErr) setError(String(firstErr.error || "archive failed"));
-						else setMessage(fill(L("archiveDone"), { op: hide ? L("archive") : L("unarchive"), n: okCount }));
+						var failures = results.filter(function (x) { return !x.ok; });
+						if (okCount === 0 && failures.length) {
+							setError(String(failures[0].error || "archive failed"));
+						} else {
+							setMessage(fill(L("archiveDone"), { op: hide ? L("archive") : L("unarchive"), n: okCount }));
+							if (failures.length) {
+								setError(fill(L("archivePartial"), { ok: okCount, fail: failures.length }) + ": " + String(failures[0].error || ""));
+							}
+						}
 						refresh(true);
 					}).catch(function (e) {
 						setError(String(e && e.message || e));
 					}).finally(function () { setArchBusy(null); });
 				};
-				if (hide && s.status === "active" && s.id !== (report && report.selfId) && typeof window !== "undefined" && window.confirm) {
-					if (!window.confirm("该会话可能正在运行工作。归档会让宿主先停止它（stopActivity），确定继续？")) return;
+				if (hide && typeof window !== "undefined" && window.confirm) {
+					var title = s.title || s.id;
+					if (!window.confirm(fill(L("archiveActiveConfirm"), { title: title }))) return;
 				}
 				doIt();
 			};
@@ -670,13 +719,23 @@ window.__ModuleLoader__.load({
 			};
 			var runDelete = function () {
 				if (selIds.length === 0) { setError(L("deleteNothing")); return; }
-				if (typeof window !== "undefined" && window.confirm && !window.confirm(fill(L("deleteConfirm"), { n: selIds.length }))) return;
 				setDelBusy(true); setMessage(null); setError(null);
-				api("delete", { ids: selIds, apply: true }).then(function (r) {
-					if (r && r.nothingToDo) { setError(L("deleteNothing")); return; }
-					setMessage(fill(L("deleteDone"), { n: r.deleted || 0, size: fmtBytes(r.diskBytes || 0), dir: r.backupDir || "backup/" }));
-					setSel({});
-					refresh(true);
+				// 先 dry-run 拿到真正可删的数量与跳过原因，再让用户确认——否则“选了 5 个、删了 0 个”
+				// 只能事后看到，而且确认框里的数字是假的。
+				api("delete", { ids: selIds }).then(function (preview) {
+					var n = ((preview && preview.targets) || []).length;
+					var skipped = ((preview && preview.skipped) || []).length;
+					if (n === 0) {
+						setError(skipped ? L("deleteNothingEligible") : L("deleteNothing"));
+						return null;
+					}
+					var text = fill(L("deleteConfirm"), { n: n }) + (skipped ? " " + fill(L("deleteSkipped"), { n: skipped }) : "");
+					if (typeof window !== "undefined" && window.confirm && !window.confirm(text)) return null;
+					return api("delete", { ids: selIds, apply: true }).then(function (r) {
+						setMessage(fill(L("deleteDone"), { n: r.deleted || 0, size: fmtBytes(r.diskBytes || 0), dir: r.backupDir || "backup/" }));
+						setSel({});
+						refresh(true);
+					});
 				}).catch(function (e) { setError(String(e && e.message || e)); })
 					.finally(function () { setDelBusy(false); });
 			};
@@ -688,16 +747,28 @@ window.__ModuleLoader__.load({
 				if (selIds.length === 0) return;
 				setBatchBusy(true); setMessage(null); setError(null);
 				api("archive", { ids: selIds, hide: hide }).then(function (r) {
-					var okCount = (r.results || []).filter(function (x) { return x.ok; }).length;
-					setMessage(fill(L("archiveDone"), { op: hide ? L("archive") : L("unarchive"), n: okCount }));
+					var results = r.results || [];
+					var okCount = results.filter(function (x) { return x.ok; }).length;
+					var failures = results.filter(function (x) { return !x.ok; });
+					if (okCount === 0 && failures.length) {
+						setError(String(failures[0].error || "archive failed"));
+					} else {
+						setMessage(fill(L("archiveDone"), { op: hide ? L("archive") : L("unarchive"), n: okCount }));
+						if (failures.length) {
+							setError(fill(L("archivePartial"), { ok: okCount, fail: failures.length }) + ": " + String(failures[0].error || ""));
+						}
+					}
 					refresh(true);
 				}).catch(function (e) { setError(String(e && e.message || e)); })
 					.finally(function () { setBatchBusy(false); });
 			};
 			var toggleAllShown = function () {
 				var next = {}; for (var k in sel) next[k] = sel[k];
-				var allChecked = shown.length > 0 && shown.every(function (s) { return next[s.id]; });
-				for (const s of shown) next[s.id] = !allChecked;
+				// 列表只渲染前 200 行；全选也只选看得见的这 200 个，避免把
+				// 不可见会话悄悄塞进批量请求（后端上限 200）。
+				var visible = shown.slice(0, 200);
+				var allChecked = visible.length > 0 && visible.every(function (s) { return next[s.id]; });
+				for (const s of visible) next[s.id] = !allChecked;
 				setSel(next);
 			};
 
@@ -716,7 +787,7 @@ window.__ModuleLoader__.load({
 				if (vis === "visible" && s.hidden) return false;
 				if (vis === "hidden" && !s.hidden) return false;
 				if (q) {
-					var hay = (String(s.title || "") + " " + s.id).toLowerCase();
+					var hay = (String(s.title || "") + " " + s.id + " " + (s.workspaceTitles || []).join(" ")).toLowerCase();
 					if (!hay.includes(q)) return false;
 				}
 				return true;
@@ -764,7 +835,7 @@ window.__ModuleLoader__.load({
 			} else {
 				// ===== 会话标签页 =====
 				var hasVisible = shown.length > 0;
-				var allShownChecked = hasVisible && shown.every(function (s) { return !!sel[s.id]; });
+				var allShownChecked = hasVisible && shown.slice(0, 200).every(function (s) { return !!sel[s.id]; });
 
 				// 统计条：总数 + 五种状态（用色点 + 数字，替代 6 张大卡）
 				var statDot = { active: "dsm-sm_dotActive", archived: "dsm-sm_dotWarn", tombstone: "dsm-sm_dotMuted", missing: "dsm-sm_dotWarn", orphan: "dsm-sm_dotMuted" };
@@ -780,25 +851,44 @@ window.__ModuleLoader__.load({
 								L("status_" + k)),
 							React.createElement("div", { className: clsx("dsm-sm_statValue", n === 0 && "dsm-sm_statValue--muted") }, fmtInt(n)));
 					}));
+				// 归档不是“残留”：单独解释一句，避免用户以为已归档会话会被清理
+				var archivedNote = summary && summary.archived > 0 && React.createElement("div", { className: "dsm-sm_foot" },
+					fill(L("archivedHint"), { n: summary.archived }));
 
-				// 清理卡（整合 purge：残留/墓碑/陈旧索引；孤儿可选）
+				// 清理卡（只清残留：墓碑 / 陈旧索引 / 缺会话目录的归档；孤儿可选）
+				var purgeBd = plan && plan.totals && plan.totals.breakdown;
+				var purgeBdText = "";
+				if (purgeBd) {
+					var bdParts = [];
+					if (purgeBd.archived) bdParts.push(L("purgeBreakArchived") + " " + purgeBd.archived);
+					if (purgeBd.tombstone) bdParts.push(L("purgeBreakTombstone") + " " + purgeBd.tombstone);
+					if (purgeBd.missing) bdParts.push(L("purgeBreakMissing") + " " + purgeBd.missing);
+					purgeBdText = bdParts.join(" · ");
+				}
+				var orphanCount = summary ? summary.orphan : 0;
+				var hasPurgeTargets = !!(plan.targets && plan.targets.length);
+				// 只有孤儿、没有墓碑/陈旧索引时，也要能把「连同孤儿」开关露出来
+				var showPurgeGroup = hasPurgeTargets || orphanCount > 0;
 				var purgeCard = plan && React.createElement("section", { className: "dsm-sm_section" },
 					React.createElement("div", { className: "dsm-sm_sectionHead" },
 						React.createElement("h3", { className: "dsm-sm_sectionTitle" },
 							L("purgeTitle"),
 							plan.totals && plan.totals.sessions ? React.createElement("span", { className: "dsm-sm_sectionCount" }, String(plan.totals.sessions)) : null)),
-					(plan.targets && plan.targets.length === 0)
+					!showPurgeGroup
 						? React.createElement("div", { className: "dsm-sm_empty" }, L("purgeEmpty"))
 						: React.createElement("div", { className: "dsm-sm_prefGroup" },
-							React.createElement("div", { className: "dsm-sm_prefRow" },
+							hasPurgeTargets && React.createElement("div", { className: "dsm-sm_prefRow" },
 								React.createElement("div", { className: "dsm-sm_prefGrow" },
 									React.createElement("div", null, L("purgeTargets") + " " + String(plan.totals ? plan.totals.sessions : 0)),
+									purgeBdText && React.createElement("div", { className: "dsm-sm_foot" }, purgeBdText),
 									React.createElement("div", { className: "dsm-sm_foot" }, L("reclaimed") + " " + fmtBytes(plan.totals ? plan.totals.diskBytes : 0))),
 								React.createElement(Button, { size: "sm", variant: "primary", disabled: busy, onClick: runPurge },
 									busy ? L("purging") : L("runPurge"))),
-							React.createElement("div", { className: "dsm-sm_prefRow" },
+							orphanCount > 0 && React.createElement("div", { className: "dsm-sm_prefRow" },
 								React.createElement(Switch, { checked: includeOrphans, onChange: function (v) { setIncludeOrphans(v); } }),
 								React.createElement("span", { className: "dsm-sm_prefGrow" }, L("purgeOrphans"))),
+							orphanCount > 0 && !includeOrphans && React.createElement("div", { className: "dsm-sm_prefRow" },
+								React.createElement("span", { className: clsx("dsm-sm_foot", "dsm-sm_footWarn") }, fill(L("purgeOrphanHint"), { n: orphanCount }))),
 							React.createElement("div", { className: "dsm-sm_prefRow" },
 								React.createElement("span", { className: "dsm-sm_foot" }, L("purgePlanHint")))));
 
@@ -828,7 +918,7 @@ window.__ModuleLoader__.load({
 									className: clsx("dsm-sm_segItem", filter === k && "dsm-sm_segActive"),
 									"aria-pressed": filter === k,
 									onClick: function () { setFilter(k); },
-								}, k === "all" ? L("filterAll") : L("status_" + k));
+								}, (k === "all" ? L("filterAll") : L("status_" + k)) + (k !== "all" && summary && summary[k] ? " (" + summary[k] + ")" : ""));
 							})),
 						React.createElement("input", {
 							type: "search",
@@ -865,13 +955,20 @@ window.__ModuleLoader__.load({
 						React.createElement(Button, { size: "sm", variant: "ghost", disabled: batchBusy, onClick: function () { batchSetArchived(false); } },
 							L("batchUnarchive")),
 						React.createElement(Button, { size: "sm", variant: "ghost", className: "dsm-sm_danger", disabled: delBusy || batchBusy, onClick: runDelete },
-							delBusy ? L("archiving") : L("batchDelete")),
+							delBusy ? L("deleting") : L("batchDelete")),
 						React.createElement("div", { className: "dsm-sm_toolbarSpacer" }),
 						React.createElement(Button, { size: "sm", variant: "ghost", onClick: function () { setSel({}); } }, L("clearSelection"))),
-					// 列表（空态区分：无会话 vs 筛选无结果）
+					// 列表（空态区分：无会话 vs 筛选无结果；后者给出清空入口）
 					!hasVisible
 						? React.createElement("div", { className: "dsm-sm_empty" },
-							sessions.length === 0 ? L("noSessions") : L("noMatch"))
+							sessions.length === 0
+								? L("noSessions")
+								: React.createElement("div", null,
+									React.createElement("div", null, L("noMatch")),
+									React.createElement(Button, {
+										size: "sm", variant: "ghost",
+										onClick: function () { setFilter("all"); setVis("all"); setQuery(""); },
+									}, L("clearFilters"))))
 						: React.createElement("div", { className: clsx("dsm-sm_list", "dsm-sm_listTight") },
 							React.createElement("div", { className: clsx("dsm-sm_row", "dsm-sm_rowHead") },
 								React.createElement("input", {
@@ -883,13 +980,16 @@ window.__ModuleLoader__.load({
 								React.createElement("span", { className: "dsm-sm_rowNum" }, fmtInt(shown.length))),
 							shown.slice(0, 200).map(function (s) {
 								var isBusy = archBusy === s.id;
+								var noData = !s.onDisk;
 								return React.createElement("div", { key: s.id, className: "dsm-sm_row" },
 									React.createElement("input", {
 										type: "checkbox", className: "dsm-sm_check",
+										"aria-label": s.title || s.id,
 										checked: !!sel[s.id],
 										onChange: function () { toggleSel(s.id); },
 									}),
 									React.createElement("span", { className: clsx("dsm-sm_badge", STATUS_BADGE[s.status] || "dsm-sm_bMuted") }, L("status_" + s.status)),
+									s.status === "archived" && s.residual && React.createElement("span", { className: clsx("dsm-sm_badge", "dsm-sm_bMuted") }, L("residualArchived")),
 									s.hidden && React.createElement("span", { className: clsx("dsm-sm_badge", "dsm-sm_bMuted") }, L("hidden")),
 									React.createElement("div", { className: "dsm-sm_rowMain" },
 										React.createElement("div", { className: "dsm-sm_rowTitle" }, s.title || s.id),
@@ -900,7 +1000,8 @@ window.__ModuleLoader__.load({
 									React.createElement("div", { className: "dsm-sm_rowActions" },
 										React.createElement(Button, {
 											size: "sm", variant: "ghost",
-											disabled: isBusy,
+											disabled: isBusy || noData,
+											title: noData ? L("noArchiveData") : undefined,
 											onClick: function () { setArchived(s); },
 										}, isBusy ? L("archiving") : (s.hidden ? L("unarchive") : L("archive")))));
 							}),
@@ -916,6 +1017,7 @@ window.__ModuleLoader__.load({
 						React.createElement("div", { className: "dsm-sm_errorBanner" }, L("error") + ": " + error),
 						React.createElement("button", { className: "dsm-sm_bannerClose", title: L("dismiss"), onClick: function () { setError(null); } }, "×")),
 					statsBar,
+					archivedNote,
 					listSection,
 					purgeCard);
 			}

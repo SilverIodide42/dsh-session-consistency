@@ -19,8 +19,8 @@ DSH 把会话数据存在**三个地方**，任何一处不同步都会导致「
 本插件在 DSH 侧栏提供一个面板，把你从「手动翻文件 + 猜哪个能删」里解放出来：
 
 - **一眼看清**五个状态：`active` / `archived` / `tombstone` / `missing` / `orphan`
-- **安全清理**：任何删除都先备份到 `backup/`，再动三处
-- **归档管理**：走宿主官方 RPC，归档=侧栏隐藏、恢复=重新出现
+- **安全清理**：只清没有会话数据的残留（墓碑、陈旧索引、缺会话目录的归档），任何删除都先备份到 `backup/`
+- **归档管理**：走宿主官方 RPC，归档=侧栏隐藏、恢复=重新出现；数据完好的归档会话不会被批量清理误伤
 - **工作区体检**：磁盘/重复文件/失效引用/备份/tmp，并生成可粘贴给 AI 的修复提示词
 
 ## 功能（面板两块）
@@ -30,7 +30,7 @@ DSH 把会话数据存在**三个地方**，任何一处不同步都会导致「
 | 会话 · 统计条 | 总数 + 五状态（active / archived 残留 / tombstone / missing / orphan，带色点） | `GET /api/status` |
 | 会话 · 统一会话列表 | 三维过滤（可见性 × 状态 × 文本搜索标题/ID）+ 行内归档/恢复 + 勾选；归档会话在同一列表内筛选 | — |
 | 会话 · 批量操作 | 勾选后浮出批量条：归档 / 恢复 / 删除选中 / 清空选择 | `POST /api/archive`、`POST /api/delete` |
-| 会话 · 清理 | 备份 + 清理归档残留/墓碑/陈旧索引（可勾选连孤儿）；恒先备份 | `GET /api/plan`、`POST /api/purge` |
+| 会话 · 清理 | 备份 + 清理残留：墓碑 / 陈旧索引 / 缺会话目录的归档（可勾选连孤儿）；恒先备份 | `GET /api/plan`、`POST /api/purge` |
 | 体检 | 工作区健康分 + 磁盘/重复/引用/备份/tmp（动态加载工作区 `tools/workspace-doctor/lib`，缺失时降级提示） | `GET /api/doctor` |
 | 体检 · AI 修复提示词 | 把体检发现整理成可粘贴给 AI 的修复提示词，一键复制 | `buildDoctorPrompt`（client 纯函数） |
 
@@ -118,13 +118,35 @@ Copy-Item index.js,client.js,cordis.patch.yml,package.json,icon.svg,README.md,LI
 ## 测试
 
 ```powershell
-node plugin-test.mjs    # 宿主半身 8 项（假 webServer + 真 HTTP + 假 .dsh 树，含 403/404 围栏）
+node plugin-test.mjs    # 宿主半身 10 项（假 webServer + 真 HTTP + 假 .dsh 树，含 403/404 围栏、原子写入）
 node client-smoke.mjs   # 浏览器半身冒烟 2 项（假 ModuleLoader + 假 React + dsh 风格断言）
-node delete-test.cjs    # 永久删除 14 项（dry-run 只读/护栏拒绝未归档/三处删除/备份完整/includeUnhidden/空 ids）
-node delete-ui-test.cjs # 列表 UI 11 项（合并列表/勾选框计数/统计条/批量条）
-node ux-test.cjs        # 交互体验 10 项（排序/空态区分/进度条/快捷键/无内联样式）
+node delete-test.cjs    # 永久删除 17 项（dry-run 只读/护栏拒绝未归档/三处删除/备份完整/includeUnhidden/空 ids/pinned 清理）
+node delete-ui-test.cjs # 列表 UI 13 项（合并列表/勾选框计数/统计条/批量条/仅孤儿时开关可见）
+node ux-test.cjs        # 交互体验 16 项（排序/空态出口/静默刷新/快捷键/无内联样式/删除预览/无数据禁用归档）
 node integ-check.cjs    # 集成验证 8 项（真宿主路由 + 假 React 全链路渲染）
 ```
+
+合计 **66 项**。
+
+## 0.1.2 修复与优化
+
+后端：
+
+- **归档判定优先于 active**：真实 DSH 索引里 `archivedSessionIds` 是 `sessionIds` 的子集，旧逻辑先判 active，导致所有归档会话都被误报成 active（归档数恒为 0）
+- **批量清理只清残留**：没有会话目录的归档、墓碑、陈旧索引才进清理计划；数据完好的归档会话不再有被误删风险
+- **索引原子写入**：先写临时文件再 rename，崩溃不会留下半个 `workspace.json`；不再在 `storages/` 额外留下 `.before`
+- **删除一致性**：delete/purge 同步清理 `pinnedSessionIds`；delete 返回实际 `diskBytes`（前端提示不再恒为 0）
+- **宿主 RPC 地址**：归档/恢复改用当前请求的 Host（仍优先 `ctx`/`DSH_WEB_URL`），端口漂移不再失效；缺失的凭据路径改为跟随 `DSH_HOME`
+- **备份目录唯一**：时间戳追加毫秒 + 随机后缀，同秒内两次操作不再合并备份
+- **错误可见**：`workspace.json` 解析失败、索引写入失败等会回传真实原因，而不是笼统的 `internal error`；doctor 缺库只缓存 30s，补装后无需重启
+
+前端：
+
+- **成功提示不再被静默刷新抹掉**（此前 `refresh(true)` 会立刻 `setMessage(null)`，4.5s 自动消失形同虚设）
+- **删除先 dry-run 预览再确认**：确认框显示真正可删数量与将被跳过的未归档数量
+- **归档失败不再被成功提示掩盖**：部分失败会同时给出成功数与第一条失败原因；无数据会话禁用归档/恢复
+- **筛选空态给出「清空筛选」出口**；清理卡展示残留分类与孤儿未勾选提示
+- 归档确认文案接入中英文案；复选框补 `aria-label`
 
 ## 已知限制
 
