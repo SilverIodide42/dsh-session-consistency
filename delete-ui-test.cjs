@@ -3,7 +3,7 @@
 const fs = require('fs');
 const vm = require('vm');
 
-const code = fs.readFileSync(__dirname + '/plugin/client.js', 'utf8');
+const code = fs.readFileSync(__dirname + '/client.js', 'utf8');
 
 function render(statusValue) {
   return new Promise((resolve) => {
@@ -40,7 +40,7 @@ function render(statusValue) {
     };
     vm.createContext(sandbox);
     vm.runInContext(code, sandbox, { filename: 'client.js' });
-    const doRender = () => { hi = 0; effects = []; const el = saved.SessionManagerPanel({}); const e = [...effects]; for (const f of e) { try { f(); } catch {} } return el; };
+    const doRender = () => { hi = 0; effects = []; const el = saved.SessionConsistencyPanel({}); const e = [...effects]; for (const f of e) { try { f(); } catch {} } return el; };
     doRender();
     setTimeout(() => resolve(JSON.stringify(doRender())), 300);
   });

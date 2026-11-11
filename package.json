@@ -1,6 +1,6 @@
 {
   "name": "dsh-session-consistency",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "DSH (DeepSeek Harness) session manager plugin: three-store consistency check across session dirs / projcache / workspace.json, backup-first cleanup, archive management and workspace health check in a Web GUI panel.",
   "main": "./index.js",
@@ -20,18 +20,19 @@
   "keywords": [
     "dsh",
     "dsh-plugin",
-    "session-manager",
+    "session-consistency",
+    "session-management",
     "cleanup",
     "workspace-health",
     "web-gui"
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/SilverIodide42/dsh-session-manager.git"
+    "url": "git+https://github.com/SilverIodide42/dsh-session-consistency.git"
   },
-  "homepage": "https://github.com/SilverIodide42/dsh-session-manager#readme",
+  "homepage": "https://github.com/SilverIodide42/dsh-session-consistency#readme",
   "bugs": {
-    "url": "https://github.com/SilverIodide42/dsh-session-manager/issues"
+    "url": "https://github.com/SilverIodide42/dsh-session-consistency/issues"
   },
   "author": "SilverIodide42",
   "engines": {

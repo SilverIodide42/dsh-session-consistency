@@ -4,6 +4,6 @@
 # package.json's dsh.client and bound to the row whose name is the bare
 # package name (subpath rows never carry the half).
 - insert:
-    - id: session-manager
+    - id: session-consistency
       name: 'dsh-session-consistency'
       config: {}

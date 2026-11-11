@@ -41,9 +41,9 @@ window.__ModuleLoader__.load({
 		};
 
 		var BUNDLE_NAME = "dsh-session-consistency";
-		var PANEL_ID = "session-manager";
+		var PANEL_ID = "session-consistency";
 		var PANEL_ORDER = 31; // right after usage-stats (30)
-		var LOCALE_NS = "sessionManager";
+		var LOCALE_NS = "sessionConsistency";
 
 		var zh = {
 			meta: { title: "会话管理", description: "检查 DSH 会话三处存储（会话目录 / 元数据缓存 / 索引）的一致性，备份并清理归档残留、纯墓碑与陈旧索引条目。" },
@@ -364,7 +364,7 @@ window.__ModuleLoader__.load({
 			var init = body !== undefined
 				? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }
 				: {};
-			return fetch("/session-manager/api/" + path, init).then(function (r) {
+			return fetch("/session-consistency/api/" + path, init).then(function (r) {
 				return r.json().then(function (j) {
 					if (!j.ok) throw new Error((j.error && j.error.message) || "api error");
 					return j.value;
@@ -535,7 +535,7 @@ window.__ModuleLoader__.load({
 						: React.createElement("div", { className: "dsm-sm_empty" }, L("aiPromptEmpty"))));
 		}
 
-		function SessionManagerPanel(props) {
+		function SessionConsistencyPanel(props) {
 			var t = props && props.t ? props.t : function (k) { return k; };
 			var locale = (typeof navigator !== "undefined" && navigator.language || "zh").startsWith("zh") ? zh : en;
 			var L = function (k) {
@@ -979,7 +979,7 @@ window.__ModuleLoader__.load({
 					key: BUNDLE_NAME,
 					locale: LOCALE_NS,
 				}, function Section(props) {
-					return React.createElement(SessionManagerPanel, props);
+					return React.createElement(SessionConsistencyPanel, props);
 				});
 			});
 
@@ -996,7 +996,7 @@ window.__ModuleLoader__.load({
 						React.createElement("div", { className: "dsm-sm-scrollInner" },
 							typeof goBackFn === "function" && React.createElement("div", { className: "dsm-sm-backRow" },
 								React.createElement(Button, { size: "sm", variant: "ghost", className: "dsm-sm-back", onClick: goBackFn }, "‹ " + (localeBackLabel()))),
-							React.createElement(SessionManagerPanel, null)));
+							React.createElement(SessionConsistencyPanel, null)));
 				});
 			});
 
@@ -1014,7 +1014,7 @@ window.__ModuleLoader__.load({
 
 		exports.BUNDLE_NAME = BUNDLE_NAME;
 		exports.PANEL_ID = PANEL_ID;
-		exports.SessionManagerPanel = SessionManagerPanel;
+		exports.SessionConsistencyPanel = SessionConsistencyPanel;
 		exports.DoctorTab = DoctorTab;
 		exports.buildDoctorPrompt = buildDoctorPrompt;
 		exports.apply = apply;

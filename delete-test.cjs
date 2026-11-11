@@ -25,7 +25,7 @@ fs.writeFileSync(path.join(dsh, 'storages', 'workspace.json'), JSON.stringify({
 
 // 用插件模块直接测（设 DSH_HOME 指向夹具）
 process.env.DSH_HOME = dsh;
-import('./plugin/index.js').then(async (m) => {
+import('./index.js').then(async (m) => {
   const http = await import('node:http');
   const routes = [];
   const ctx = { webServer: { register: (r) => { routes.push(r); return () => {}; } }, logger: { warn: () => {} }, effect: (fn) => { fn(); return () => {}; } };
@@ -39,14 +39,14 @@ import('./plugin/index.js').then(async (m) => {
   const check = (name, cond) => { console.log((cond ? '✔' : '✖') + ' ' + name); cond ? pass++ : fail++; };
 
   // 1) dry-run 不删
-  const dry = await post('/session-manager/api/delete', { ids: [ID_OK, ID_LIVE] });
+  const dry = await post('/session-consistency/api/delete', { ids: [ID_OK, ID_LIVE] });
   check('dry-run 返回计划', dry.ok && dry.value.dryRun === true);
   check('dry-run 目标只有归档会话', dry.value.targets.length === 1 && dry.value.targets[0].id === ID_OK);
   check('dry-run 拒绝未归档会话', (dry.value.skipped || []).some((s) => s.id === ID_LIVE && s.reason === 'not-archived'));
   check('dry-run 未删文件', fs.existsSync(path.join(dsh, 'sessions', 'ws-k', ID_OK)));
 
   // 2) apply 真删
-  const app = await post('/session-manager/api/delete', { ids: [ID_OK, ID_LIVE], apply: true });
+  const app = await post('/session-consistency/api/delete', { ids: [ID_OK, ID_LIVE], apply: true });
   check('apply 删除 1 个', app.ok && app.value.deleted === 1);
   check('会话目录已删', !fs.existsSync(path.join(dsh, 'sessions', 'ws-k', ID_OK)));
   check('projcache 已删', !fs.existsSync(path.join(dsh, 'storages', 'session_projcache', 'sessions', ID_OK + '.json')));
@@ -58,11 +58,11 @@ import('./plugin/index.js').then(async (m) => {
   check('备份含会话目录', fs.existsSync(path.join(app.value.backupDir, 'sessions', ID_OK)));
 
   // 3) includeUnhidden 可强制删未归档
-  const force = await post('/session-manager/api/delete', { ids: [ID_LIVE], apply: true, includeUnhidden: true });
+  const force = await post('/session-consistency/api/delete', { ids: [ID_LIVE], apply: true, includeUnhidden: true });
   check('includeUnhidden 可删未归档', force.ok && force.value.deleted === 1 && !fs.existsSync(path.join(dsh, 'sessions', 'ws-k', ID_LIVE)));
 
   // 4) 空 ids 报错
-  const bad = await post('/session-manager/api/delete', { ids: [] });
+  const bad = await post('/session-consistency/api/delete', { ids: [] });
   check('空 ids 报 400', bad.ok === false);
 
   console.log(`\n${pass} passed, ${fail} failed`);

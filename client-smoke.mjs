@@ -3,7 +3,7 @@
 // 覆盖：
 //  1. window.__ModuleLoader__.load 工厂可执行，导出 apply/inject/PANEL_ID
 //  2. apply() 在最小假 ctx（slots.inject + locale + layout）上注册三个 slot（plugins.bundle.config / main / sidebar.panellist）
-//  3. SessionManagerPanel 用假 React.createElement 可渲染（不崩）
+//  3. SessionConsistencyPanel 用假 React.createElement 可渲染（不崩）
 //  4. 假 Button 被引用（require('@deepseek-ai/dsh-client-ui-primitives') 通路正常）
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,7 +13,7 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const code = fs.readFileSync(path.join(__dirname, 'plugin', 'client.js'), 'utf8');
+const code = fs.readFileSync(path.join(__dirname, 'client.js'), 'utf8');
 
 function makeEnv() {
   const buttonUsed = { count: 0 };
@@ -112,7 +112,7 @@ test('apply() 在假 ctx 上注册三个 slot，且面板可渲染', () => {
 
   assert.equal(typeof saved.apply, 'function');
   assert.equal(JSON.stringify(saved.inject), JSON.stringify(['slots', 'locale', 'layout']));
-  assert.equal(saved.PANEL_ID, 'session-manager');
+  assert.equal(saved.PANEL_ID, 'session-consistency');
 
   // 假 slots ctx
   const injected = [];
@@ -136,8 +136,8 @@ test('apply() 在假 ctx 上注册三个 slot，且面板可渲染', () => {
   assert.equal(JSON.stringify(injected.slice().sort()), JSON.stringify(['main', 'plugins.bundle.config', 'sidebar.panellist']));
 
   // 面板渲染冒烟：loading=true（fetch 挂起）→ loading 分支也带 dsm-sm 类
-  panelFactory = saved.SessionManagerPanel;
-  const el = saved.SessionManagerPanel({});
+  panelFactory = saved.SessionConsistencyPanel;
+  const el = saved.SessionConsistencyPanel({});
   assert.ok(el);
   assert.ok(JSON.stringify(el).includes('dsm-sm_loading') || JSON.stringify(el).includes('dsm-sm-page'), '渲染树根为 dsm-sm 类');
 

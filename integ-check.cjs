@@ -1,5 +1,5 @@
 // 集成验证 v2：完整假 React（共享 hook 池 + effect 手动执行 + 真 HTTP API）
-import('./plugin/index.js').then(async (m) => {
+import('./index.js').then(async (m) => {
   const fs = await import('node:fs');
   const vm = await import('node:vm');
   const http = await import('node:http');
@@ -16,7 +16,7 @@ import('./plugin/index.js').then(async (m) => {
   const port = server.address().port;
 
   // 2) client.js + 完整假 React
-  const code = fs.readFileSync('plugin/client.js', 'utf8');
+  const code = fs.readFileSync('client.js', 'utf8');
   const saved = {};
   const hooks = [];
   let hookIdx = 0;
@@ -48,7 +48,7 @@ import('./plugin/index.js').then(async (m) => {
   };
   vm.createContext(sandbox);
   vm.runInContext(code, sandbox, { filename: 'client.js' });
-  const render = () => { hookIdx = 0; effects.length = 0; return saved.SessionManagerPanel({}); };
+  const render = () => { hookIdx = 0; effects.length = 0; return saved.SessionConsistencyPanel({}); };
 
   // 3) 挂载：首渲 + 执行 effects（发 status/plan 请求）→ 等 resolve → 重渲
   render();

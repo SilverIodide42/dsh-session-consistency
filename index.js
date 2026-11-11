@@ -1,22 +1,22 @@
 /**
  * dsh-session-consistency — host half.
  *
- * Mounts one prefixed HTTP route (/session-manager/api) on the host
+ * Mounts one prefixed HTTP route (/session-consistency/api) on the host
  * webServer and serves the three-location consistency model, the
  * workspace doctor check:
  *
- *   GET  /session-manager/api/status   → summary + session list
- *   GET  /session-manager/api/plan     → purge plan (dry-run, no writes)
- *   POST /session-manager/api/purge    { apply?: boolean, orphans?: boolean }
+ *   GET  /session-consistency/api/status   → summary + session list
+ *   GET  /session-consistency/api/plan     → purge plan (dry-run, no writes)
+ *   POST /session-consistency/api/purge    { apply?: boolean, orphans?: boolean }
  *                                      → backup + purge (apply=true) or plan
- *   GET  /session-manager/api/doctor   → workspace health check (integrated
+ *   GET  /session-consistency/api/doctor   → workspace health check (integrated
  *                                        from tools/workspace-doctor; read-only,
  *                                        needs the workspace-doctor libs on disk)
- *   POST /session-manager/api/archive  { ids: string[], hide?: boolean }
+ *   POST /session-consistency/api/archive  { ids: string[], hide?: boolean }
  *                                      → archive (hide=true, default) / unarchive via
  *                                        the host's own workspace RPC (consistency
  *                                        guaranteed by the host, not by us)
- *   POST /session-manager/api/delete   { ids: string[], apply?: boolean, includeUnhidden?: boolean }
+ *   POST /session-consistency/api/delete   { ids: string[], apply?: boolean, includeUnhidden?: boolean }
  *                                      → PERMANENT delete: session dirs + projcache + index
  *                                        (archived sessions only unless includeUnhidden;
  *                                        always backs up first; dry-run by default)
@@ -554,18 +554,18 @@ function buildRoute(ctx) {
     const dshHome = resolveDshHome()
     try {
       // The handler receives the FULL url (host prefix semantics: req.url
-      // keeps /session-manager/api), same as the usage panel's route.
-      if (method === 'GET' && routePath === '/session-manager/api/status') {
+      // keeps /session-consistency/api), same as the usage panel's route.
+      if (method === 'GET' && routePath === '/session-consistency/api/status') {
         const report = buildReport(dshHome)
         if (report.error) throw new ApiError(500, report.error)
         return writeJson(res, { ok: true, value: report })
       }
-      if (method === 'GET' && routePath === '/session-manager/api/plan') {
+      if (method === 'GET' && routePath === '/session-consistency/api/plan') {
         const plan = buildPurgePlan(dshHome, { includeOrphans: false })
         if (plan.error) throw new ApiError(500, plan.error)
         return writeJson(res, { ok: true, value: plan })
       }
-      if (method === 'POST' && routePath === '/session-manager/api/purge') {
+      if (method === 'POST' && routePath === '/session-consistency/api/purge') {
         const body = await readJsonBody(req)
         const includeOrphans = body?.orphans === true
         const plan = buildPurgePlan(dshHome, { includeOrphans })
@@ -580,12 +580,12 @@ function buildRoute(ctx) {
         const result = applyPurge(plan, backupDir)
         return writeJson(res, { ok: true, value: result })
       }
-      if (method === 'GET' && routePath === '/session-manager/api/doctor') {
+      if (method === 'GET' && routePath === '/session-consistency/api/doctor') {
         const report = await runDoctor(dshHome)
         if (report.error) throw new ApiError(500, report.error)
         return writeJson(res, { ok: true, value: report })
       }
-      if (method === 'POST' && routePath === '/session-manager/api/archive') {
+      if (method === 'POST' && routePath === '/session-consistency/api/archive') {
         const body = await readJsonBody(req)
         const ids = Array.isArray(body?.ids) ? body.ids.filter((x) => typeof x === 'string') : []
         if (ids.length === 0) throw new ApiError(400, 'ids[] required')
@@ -594,7 +594,7 @@ function buildRoute(ctx) {
         return writeJson(res, { ok: true, value })
       }
       // 永久删除（仅归档会话；dry-run 默认，apply 才真删，恒先备份）
-      if (method === 'POST' && routePath === '/session-manager/api/delete') {
+      if (method === 'POST' && routePath === '/session-consistency/api/delete') {
         const body = await readJsonBody(req)
         const ids = Array.isArray(body?.ids) ? body.ids.filter((x) => typeof x === 'string') : []
         if (ids.length === 0) throw new ApiError(400, 'ids[] required')
@@ -617,7 +617,7 @@ function buildRoute(ctx) {
       return writeError(res, err)
     }
   }
-  return { kind: 'prefix', path: '/session-manager/api', handler }
+  return { kind: 'prefix', path: '/session-consistency/api', handler }
 }
 
 export function apply(ctx) {

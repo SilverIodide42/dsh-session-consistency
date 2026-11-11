@@ -1,7 +1,7 @@
 // 体验特性验证：静默刷新不闪屏 / 排序 / banner 自动消失 / 空态区分 / 进��条
 const fs = require('fs');
 const vm = require('vm');
-const code = fs.readFileSync('plugin/client.js', 'utf8');
+const code = fs.readFileSync('client.js', 'utf8');
 
 const boxes = [];
 let hi = 0;
@@ -45,11 +45,11 @@ vm.runInContext(code, sb, { filename: 'client.js' });
 const flat = (n, d = 0, o = []) => { if (n == null || d > 120) return o; if (Array.isArray(n)) { for (const x of n) flat(x, d + 1, o); return o; } if (typeof n !== 'object') return o; o.push(n); if (n.c && n.c !== n) flat(n.c, d + 1, o); return o; };
 const render = async () => {
   hi = 0; effects = [];
-  const e1 = saved.SessionManagerPanel({});
+  const e1 = saved.SessionConsistencyPanel({});
   for (const f of [...effects]) { try { f(); } catch {} }
   await new Promise((r) => setTimeout(r, 300));
   hi = 0; effects = [];
-  const e2 = saved.SessionManagerPanel({});
+  const e2 = saved.SessionConsistencyPanel({});
   for (const f of [...effects]) { try { f(); } catch {} }
   return e2;
 };

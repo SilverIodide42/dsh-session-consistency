@@ -20,7 +20,7 @@ import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PLUGIN = path.join(__dirname, 'plugin', 'index.js');
+const PLUGIN = path.join(__dirname, 'index.js');
 
 let root, dsh, server, baseUrl, route;
 
@@ -56,7 +56,7 @@ function mkIndex() {
   }, null, 2));
 }
 
-const API = '/session-manager/api';
+const API = '/session-consistency/api';
 function get(p, headers = {}) {
   return new Promise((resolve, reject) => {
     http.get(baseUrl + API + p, { headers }, res => {
@@ -118,7 +118,7 @@ before(async () => {
   assert.equal(registered.length, 1, '应注册恰好 1 条路由');
   route = registered[0];
   assert.equal(route.kind, 'prefix');
-  assert.equal(route.path, '/session-manager/api');
+  assert.equal(route.path, '/session-consistency/api');
   await startServer();
 });
 

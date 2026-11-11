@@ -1,9 +1,9 @@
 # dsh-session-consistency
 
-> DSH（DeepSeek Harness）会话管理插件 — Web GUI 侧栏面板，用于检查三处会话存储的一致性、归档/恢复会话、永久清理归档残留，以及工作区体检。
+> DSH（DeepSeek Harness）会话管理插件 — Web GUI 侧栏面板，用于检查三处会话存储的一致性、归档/恢复会话、备份后清理归档残留，以及工作区体检。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/SilverIodide42/dsh-session-manager?color=blue)](https://github.com/SilverIodide42/dsh-session-manager/releases/latest)
+[![Release](https://img.shields.io/github/v/release/SilverIodide42/dsh-session-consistency?color=blue)](https://github.com/SilverIodide42/dsh-session-consistency/releases/latest)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org)
 
 ## 这是什么
@@ -27,110 +27,112 @@ DSH 把会话数据存在**三个地方**，任何一处不同步都会导致「
 
 | 标签/区块 | 功能 | API |
 |---|---|---|
-| 会话 · 统计条 | 总数 + 五状态（active / archived 残留 / tombstone / missing / orphan，带色点），替代原来的 6 张大卡 | `GET /api/status` |
-| 会话 · 统一会话列表 | 三维过滤（可见性 × 状态 × 文本搜索标题/ID）+ 行内归档/恢复 + 勾选；**归档会话在同一列表内筛选**，不再单独列一份 | — |
+| 会话 · 统计条 | 总数 + 五状态（active / archived 残留 / tombstone / missing / orphan，带色点） | `GET /api/status` |
+| 会话 · 统一会话列表 | 三维过滤（可见性 × 状态 × 文本搜索标题/ID）+ 行内归档/恢复 + 勾选；归档会话在同一列表内筛选 | — |
 | 会话 · 批量操作 | 勾选后浮出批量条：归档 / 恢复 / 删除选中 / 清空选择 | `POST /api/archive`、`POST /api/delete` |
 | 会话 · 清理 | 备份 + 清理归档残留/墓碑/陈旧索引（可勾选连孤儿）；恒先备份 | `GET /api/plan`、`POST /api/purge` |
 | 体检 | 工作区健康分 + 磁盘/重复/引用/备份/tmp（动态加载工作区 `tools/workspace-doctor/lib`，缺失时降级提示） | `GET /api/doctor` |
-| 体检 · AI 修复提示词 | 把体检发现整理成**可粘贴给 AI 的修复提示词**（工作区路径 + 约定 + 分级 findings + 重复/失效明细 + 先列计划再动手），一键复制 | `buildDoctorPrompt`（client 纯函数） |
+| 体检 · AI 修复提示词 | 把体检发现整理成可粘贴给 AI 的修复提示词，一键复制 | `buildDoctorPrompt`（client 纯函数） |
 
-### UI 设计要点（2026-11-09 重构）
+### UI 与交互要点
 
-- **信息密度优先**：6 张摘要大卡 → 一条 `dsm-sm_stats` 统计条（色点标识状态，0 值自动弱化）
-- **单一数据源**：原「清理归档」独立区块的勾选框与会话列表的勾选框**重复渲染同一批会话**，已合并为一份列表 + 批量操作条
-- **零内联样式**：所有布局走 `dsm-sm_*` 类（`style: {...}` 计数为 0），配色全部取 `--dsw-alias-*` 令牌
-- **无障碍**：分段控件带 `aria-pressed`、分组带 `role="group"` + `aria-label`
-- **滚动**：列表区 `dsm-sm_listTight` 自带 `max-height:360px` + `overflow:auto`，长列表不撑爆面板
-
-### 交互体验（2026-11-09 二轮）
-
-| 改进 | 效果 |
-|---|---|
-| **静默刷新** | 归档/删除后的 `refresh(true)` 不再整页闪 "检查中…"，保留列表与滚动位置，只在顶部走一条细进度条（`dsm-sm_progressBar`） |
-| **成功提示自动消失** | 4.5s 后自动收起；错误提示常驻并带 `×` 手动关闭 |
-| **排序切换** | 最近 / 标题 / 体积三档（标题用 `localeCompare(...,"zh")` 中文排序） |
-| **快捷键** | `Ctrl/⌘+F` 聚焦搜索框；搜索框内 `Esc` 清空 |
-| **空态区分** | "确实没会话" 与 "筛选无结果" 分开提示，后者引导清空搜索 |
-| **被过滤的已选项** | 勾选后切换筛选，批量条显示"（N 个已选项被当前筛选隐藏）"，避免误以为丢失选择 |
-
-## 体检 · AI 修复提示词
-
-体检标签底部的「AI 修复提示词」区：点「生成提示词」把当前体检报告整理成一段纯文本（只读 textarea），点「复制」写入剪贴板，直接粘给 AI（本助手/任意模型）即可开工。提示词内容：
-
-- **工作区根**与**约定**（备份到 `backup/`、`tmp/` 可清空、脚本 UTF-8、完成后重跑体检）
-- 健康分、分级 findings（error/warn/info）、磁盘用量
-- 重复文件组（`n×大小：路径A 与 路径B`）、失效路径引用（`引用 ← 文档`）、备份清单、tmp 占用
-- **要求**：先列带优先级的修复计划并说明风险（尤其不可恢复操作），等确认后再执行
-
-实现：`buildDoctorPrompt(report, L)` 纯函数（零依赖、可单测），面板只负责渲染与复制；`navigator.clipboard` 不可用时降级提示"请手工全选复制"。
-
-## 清理归档（delete，永久删除）
-
-宿主**没有**「持久化删除会话」的公开 RPC（`session/delete` 只动运行时态——实测调用返回 OK 但三处数据完全不变），所以三处删除由本插件执行（与旧 CLI purge 同款语义）：
-
-- **范围**：会话目录 + projcache JSON + `archivedSessionIds` / `sessionIds` 索引条目
-- **护栏**：默认**只删已归档（隐藏中）的会话**；未归档需 `includeUnhidden: true`（面板不传，防误删）
-- **安全**：默认 dry-run（返回计划 + `skipped` 原因）；`apply: true` 才执行，且**恒先备份**到 `<workspace>/backup/archived-sessions-<时间戳>/`（会话目录 + projcache + workspace.json.before），可手工恢复
-- **面板操作**：「清理归档」区列出全部隐藏会话 → 逐条勾选或「全选隐藏会话」→「删除选中 (n)」→ 二次确认
-
-## 归档管理（archive）
-
-DSH 的归档语义（app.asar 逆向 + 真机实验确认）：`archivedSessionIds` 是 **GUI 隐藏集**——被归档的会话从侧栏消失但数据完好；`sessionIds` 含全部注册会话（含被隐藏的）。
-
-- **归档**：`POST /api/archive {ids:[], hide:true}` → 逐个走宿主官方 `workspace/archiveSession` RPC（一致性由宿主保证，不直接改索引）
-- **恢复**：`hide:false` → `workspace/unarchiveSession`，会话重新出现在 GUI 侧栏
-- **`stopActivity`**（默认 true）：归档运行中的会话时，宿主先请求停止其 turn/子代理/后台任务/定时；不开启则宿主以 `workspace/session-active` 拒绝
-- **面板操作**：会话列表每行「归档/恢复」按钮 + 顶部「显示中/隐藏中」过滤器；活跃会话归档前弹确认
+- **信息密度优先**：统计条 + 单一会话列表（不再重复渲染两批勾选框）
+- **零内联样式**：所有布局走 `dsm-sm_*` 类，配色取 `--dsw-alias-*` 令牌
+- **静默刷新**：归档/删除后保留列表与滚动位置，仅顶部细进度条
+- **快捷键**：`Ctrl/⌘+F` 聚焦搜索、`Esc` 清空
+- **排序与空态**：最近 / 标题 / 体积三档；区分「确实没会话」与「筛选无结果」
 
 ## 安装 / 更新
 
 ### 方式一：下载预打包文件（推荐）
 
-从 [Releases](https://github.com/SilverIodide42/dsh-session-manager/releases/latest) 下载 `dsh-session-consistency-0.1.0.tgz`，解压到 DSH profile 的 `node_modules`：
+从 [Releases](https://github.com/SilverIodide42/dsh-session-consistency/releases/latest) 下载 `dsh-session-consistency-0.1.2.tgz`，解压到 DSH profile 的 `node_modules`：
 
 ```powershell
-# 解压 tgz 到 profile（tgz 内已含 package/ 前缀）
-$dst = "$env:USERPROFILE\.dsh\profiles\desktop\node_modules\dsh-session-manager"
+$dst = "$env:USERPROFILE\.dsh\profiles\desktop\node_modules\dsh-session-consistency"
 New-Item -ItemType Directory -Force -Path $dst | Out-Null
-tar -xzf dsh-session-consistency-0.1.0.tgz -C $tmp; Copy-Item "$tmp\package\*" $dst -Recurse -Force
+$tmp = Join-Path $env:TEMP ("dsh-consistency-" + [guid]::NewGuid())
+New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+tar -xzf dsh-session-consistency-0.1.2.tgz -C $tmp
+Copy-Item "$tmp\package\*" $dst -Recurse -Force
 ```
 
 ### 方式二：从仓库直接装
 
 ```bash
-pnpm add github:SilverIodide42/dsh-session-manager#v0.1.0
+dsh plugin --profile desktop add github:SilverIodide42/dsh-session-consistency
+# 或固定版本：
+pnpm add github:SilverIodide42/dsh-session-consistency#v0.1.2
 ```
 
 ### 方式三：从源码复制（开发调试）
 
 ```powershell
-Copy-Item plugin\* "$env:USERPROFILE\.dsh\profiles\desktop\node_modules\dsh-session-manager\" -Force
+$dst = "$env:USERPROFILE\.dsh\profiles\desktop\node_modules\dsh-session-consistency"
+New-Item -ItemType Directory -Force -Path $dst | Out-Null
+Copy-Item index.js,client.js,cordis.patch.yml,package.json,icon.svg,README.md,LICENSE $dst -Force
 ```
 
 ### 首次安装的额外两步
 
-1. profile `package.json` 的 `dependencies` 加 `"dsh-session-consistency": "file:./node_modules/dsh-session-manager"`
+1. profile `package.json` 的 `dependencies` 加 `"dsh-session-consistency": "file:./node_modules/dsh-session-consistency"`
 2. profile `package.json` 的 `dsh.profile.bundles` 数组加 `"dsh-session-consistency"`
 
 然后**重启 DSH**（宿主半生效）；仅更新 client 半时刷新页面即可。
 
 > ⚠️ 不要在 profile 目录跑完整 `pnpm install` —— 会重建 `node_modules` 并把自引用的 `file:` 依赖掏空。用 `--lockfile-only` 或手动复制。
 
-安全：loopback Host 围栏 + `sec-fetch-site: cross-site` 拒绝 + Origin 同源校验；purge/delete 恒先备份。
+## HTTP API
+
+宿主半身挂一条 prefix 路由 `/session-consistency/api`：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/session-consistency/api/status` | 全量会话 + 五状态摘要（只读） |
+| GET | `/session-consistency/api/plan` | 清理计划（dry-run，只读） |
+| POST | `/session-consistency/api/purge` | `{}` → dry-run；`{apply:true}` → 备份+清理；`{orphans:true}` 纳入孤儿 |
+| GET | `/session-consistency/api/doctor` | 工作区体检（动态加载工作区 `tools/workspace-doctor/lib`；缺失时 500 + 面板降级提示） |
+| POST | `/session-consistency/api/archive` | `{ids:[], hide:true}` 归档 / `hide:false` 恢复，走宿主 `workspace/*` RPC |
+| POST | `/session-consistency/api/delete` | 永久删除三处数据；默认 dry-run，`apply:true` 才执行，恒先备份 |
+
+安全：loopback Host 围栏 + `sec-fetch-site: cross-site` 拒绝 + Origin 同源校验；purge/delete 恒先备份（workspace `backup/archived-sessions-<stamp>/`）。
+
+## 面板挂载点
+
+- `plugins.bundle.config`（按包名 key）→ 插件详情页内嵌面板
+- `main` + `sidebar.panellist`（id `session-consistency`，order 31，紧随 usage-stats）→ 独立全局面板「会话管理」
+
+## 仓库结构
+
+```
+.
+├── package.json        # dsh.bundle.patch + dsh.client.inject 声明
+├── cordis.patch.yml    # 一行 insert 挂载宿主半身
+├── index.js            # 宿主半身：prefix 路由 /session-consistency/api（ESM，零依赖）
+├── client.js           # 浏览器半身：手写 __ModuleLoader__ 工厂（React，无构建）
+├── icon.svg / LICENSE
+├── README.md
+└── *-test.cjs / *-check.cjs / client-smoke.mjs / plugin-test.mjs
+```
 
 ## 测试
 
 ```powershell
-node plugin-test.mjs    # 宿主半身 8 个（假 webServer + 真 HTTP + 假 .dsh 树，含 403/404 围栏）
-node client-smoke.mjs   # 浏览器半身冒烟 2 个（假 ModuleLoader + 假 React + dsh 风格断言）
+node plugin-test.mjs    # 宿主半身 8 项（假 webServer + 真 HTTP + 假 .dsh 树，含 403/404 围栏）
+node client-smoke.mjs   # 浏览器半身冒烟 2 项（假 ModuleLoader + 假 React + dsh 风格断言）
 node delete-test.cjs    # 永久删除 14 项（dry-run 只读/护栏拒绝未归档/三处删除/备份完整/includeUnhidden/空 ids）
 node delete-ui-test.cjs # 列表 UI 11 项（合并列表/勾选框计数/统计条/批量条）
 node ux-test.cjs        # 交互体验 10 项（排序/空态区分/进度条/快捷键/无内联样式）
-node integ-check.cjs    # 集成验证（真宿主路由 + 假 React 全链路渲染）
+node integ-check.cjs    # 集成验证 8 项（真宿主路由 + 假 React 全链路渲染）
 ```
 
-## 文件
+## 已知限制
 
-- `plugin/index.js` — 宿主半身（prefix 路由 /session-manager/api）
-- `plugin/client.js` — 浏览器半身（手写 __ModuleLoader__ 工厂，dsh 官方面板风格）
-- `plugin-test.mjs` / `client-smoke.mjs` / `delete-test.cjs` / `delete-ui-test.cjs` / `integ-check.cjs` — 测试
+- 工作区体检依赖工作区内 `tools/workspace-doctor/lib`，缺失时该标签页降级提示
+- 删除与清理会改动 DSH 数据目录，大规模清理建议先退出其他 DSH 实例
+- 浏览器半身为手写工厂（无 tsdown/tsc），未做类型检查
+- 面板表格最多展示 200 行（可用状态/搜索过滤）
+
+## License
+
+MIT © SilverIodide42
