@@ -958,13 +958,15 @@ window.__ModuleLoader__.load({
 					// 目标预览：清理会永久删除文件，先让用户看到具体是哪几个会话
 					showTargets && purgeTargets.length > 0 && React.createElement("div", { className: clsx("dsm-sm_list", "dsm-sm_listTight") },
 						purgeTargets.slice(0, 20).map(function (t) {
+							// Older hosts (0.1.2) do not send hasLog; fall back to diskSize.
+							var hasLog = t.hasLog === undefined ? t.diskSize != null : t.hasLog === true;
 							return React.createElement("div", { key: t.id, className: "dsm-sm_row" },
 								React.createElement("span", { className: clsx("dsm-sm_badge", STATUS_BADGE[t.status] || "dsm-sm_bMuted") }, L("status_" + t.status)),
 								React.createElement("div", { className: "dsm-sm_rowMain" },
 									React.createElement("div", { className: "dsm-sm_rowTitle" }, t.title || t.id),
 									React.createElement("div", { className: "dsm-sm_rowSub" }, t.id)),
 								React.createElement("div", { className: "dsm-sm_rowValues" },
-									React.createElement("span", { className: "dsm-sm_rowNum" }, t.hasLog ? fmtBytes(t.diskSize) : L("noLog")),
+									React.createElement("span", { className: "dsm-sm_rowNum" }, hasLog ? fmtBytes(t.diskSize) : L("noLog")),
 									t.cacheFile && React.createElement("span", { className: "dsm-sm_rowNumSub" }, L("hasCache"))));
 						}),
 						purgeTargets.length > 20 && React.createElement("div", { className: clsx("dsm-sm_row", "dsm-sm_foot") },
