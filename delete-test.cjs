@@ -59,6 +59,10 @@ import('./index.js').then(async (m) => {
   check('未归档会话完好', fs.existsSync(path.join(dsh, 'sessions', 'ws-k', ID_LIVE)));
   check('备份已生成', fs.existsSync(app.value.backupDir) && fs.existsSync(path.join(app.value.backupDir, 'workspace.json.before')));
   check('备份含会话目录', fs.existsSync(path.join(app.value.backupDir, 'sessions', ID_OK)));
+  const manPath = path.join(app.value.backupDir, 'backup.json');
+  check('备份清单已生成', app.value.backupManifest === manPath && fs.existsSync(manPath));
+  const man = fs.existsSync(manPath) ? JSON.parse(fs.readFileSync(manPath, 'utf8')) : null;
+  check('清单记录删除目标与日志标记', !!man && man.kind === 'delete' && man.targets.some((t) => t.id === ID_OK && t.hasLog === true));
 
   // 3) includeUnhidden 可强制删未归档
   const force = await post('/session-consistency/api/delete', { ids: [ID_LIVE], apply: true, includeUnhidden: true });

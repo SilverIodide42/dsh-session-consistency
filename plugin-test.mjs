@@ -39,6 +39,10 @@ function mkSessionDir(id, size = 100) {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'session.v4.jsonl.zstd'), Buffer.alloc(size, 7));
 }
+/** Directory exists but the log file is gone: metadata-only residue. */
+function mkEmptySessionDir(id) {
+  fs.mkdirSync(path.join(dsh, 'sessions', 'ws-key-1', id), { recursive: true });
+}
 function mkProjcache(id, title = 't-' + id.slice(8, 14)) {
   const dir = path.join(dsh, 'storages', 'session_projcache', 'sessions');
   fs.mkdirSync(dir, { recursive: true });
@@ -105,7 +109,7 @@ before(async () => {
   mkSessionDir(ID.a1, 1000); mkProjcache(ID.a1, '活跃A');
   mkSessionDir(ID.a2, 500);  mkProjcache(ID.a2, '活跃B');
   mkSessionDir(ID.ar, 2000); mkProjcache(ID.ar, '归档完整');
-  mkProjcache(ID.ar2, '归档但会话目录缺失'); // 只剩缓存 → 残留
+  mkEmptySessionDir(ID.ar2); mkProjcache(ID.ar2, '目录在但日志缺失'); // 只剩空目录+缓存 → 墓碑
   mkSessionDir(ID.or, 300);  mkProjcache(ID.or, '孤儿');
   mkIndex();
   process.env.DSH_HOME = dsh; // 宿主半身经 resolveDshHome() 读它
@@ -137,17 +141,19 @@ test('GET /status 返回五状态摘要（归档优先于 active）', async () =
   assert.equal(r.ok, true);
   assert.equal(r.value.summary.total, 7);
   assert.equal(r.value.summary.active, 2);
-  assert.equal(r.value.summary.archived, 2);
-  assert.equal(r.value.summary.archivedResidual, 1);
-  assert.equal(r.value.summary.tombstone, 1);
+  assert.equal(r.value.summary.archived, 1);
+  assert.equal(r.value.summary.archivedResidual, 0);
+  assert.equal(r.value.summary.tombstone, 2);
   assert.equal(r.value.summary.orphan, 1);
   assert.equal(r.value.summary.missing, 1);
   const byId = Object.fromEntries(r.value.sessions.map((s) => [s.id, s]));
   assert.equal(byId[ID.ar].status, 'archived', '同时在 sessionIds 里的归档会话仍是 archived');
   assert.equal(byId[ID.ar].hidden, true);
-  assert.equal(byId[ID.ar].residual, false, '数据完好的归档会话不是残留');
-  assert.equal(byId[ID.ar2].status, 'archived');
-  assert.equal(byId[ID.ar2].residual, true, '缺会话目录的归档会话算残留');
+  assert.equal(byId[ID.ar].residual, false, '日志还在的归档会话不是残留');
+  assert.equal(byId[ID.ar2].status, 'tombstone', '目录存在但日志缺失的归档会话是墓碑');
+  assert.equal(byId[ID.ar2].residual, true, '缺日志的归档会话算残留');
+  assert.equal(byId[ID.ar2].onDisk, false, 'onDisk 表示会话日志存在，不只是目录存在');
+  assert.equal(byId[ID.ar2].inCache, true, '缓存仍在');
   assert.equal(byId[ID.tb].status, 'tombstone');
   assert.equal(byId[ID.ms].status, 'missing');
   assert.equal(byId[ID.or].status, 'orphan');
@@ -159,9 +165,9 @@ test('GET /plan 只读，只含残留（不含数据完好的归档）', async (
   assert.equal(r.ok, true);
   assert.equal(r.value.targets.length, 3); // ar2 + tb + ms，不含 ar / orphan
   assert.equal(r.value.totals.sessions, 3);
-  assert.equal(r.value.totals.dirCount, 0);
-  assert.equal(r.value.totals.cacheCount, 1); // ar2 只剩缓存文件
-  assert.deepEqual(r.value.totals.breakdown, { archived: 1, tombstone: 1, missing: 1, orphan: 0 });
+  assert.equal(r.value.totals.dirCount, 1); // ar2 的空目录也要备份
+  assert.equal(r.value.totals.cacheCount, 1); // ar2 的缓存文件
+  assert.deepEqual(r.value.totals.breakdown, { archived: 0, tombstone: 2, missing: 1, orphan: 0 });
   assert.equal(fs.readFileSync(path.join(dsh, 'storages', 'workspace.json'), 'utf8'), before, 'plan 不得改动文件');
 });
 
@@ -184,6 +190,7 @@ test('POST /purge {apply:true} 备份 + 清理残留，保留完整归档', asyn
   // 三处验证
   assert.ok(fs.existsSync(path.join(dsh, 'sessions', 'ws-key-1', ID.ar)), '数据完好的归档会话不得被清');
   assert.ok(fs.existsSync(path.join(dsh, 'storages', 'session_projcache', 'sessions', ID.ar + '.json')));
+  assert.ok(!fs.existsSync(path.join(dsh, 'sessions', 'ws-key-1', ID.ar2)), '日志缺失的归档目录应被清掉');
   assert.ok(!fs.existsSync(path.join(dsh, 'storages', 'session_projcache', 'sessions', ID.ar2 + '.json')));
   const idx = JSON.parse(fs.readFileSync(path.join(dsh, 'storages', 'workspace.json'), 'utf8'));
   assert.deepEqual(idx.global.archivedSessionIds, [ID.ar]);
@@ -196,8 +203,14 @@ test('POST /purge {apply:true} 备份 + 清理残留，保留完整归档', asyn
   assert.ok(!fs.readdirSync(path.join(dsh, 'storages')).some((n) => n.startsWith('workspace.json.tmp-')), '不得留下临时索引');
   // 备份验证
   const backupDir = r.value.backupDir;
+  assert.ok(fs.existsSync(path.join(backupDir, 'sessions', ID.ar2)), '空目录也要备份');
   assert.ok(fs.existsSync(path.join(backupDir, 'projcache', ID.ar2 + '.json')));
   assert.ok(fs.existsSync(path.join(backupDir, 'workspace.json.before')));
+  assert.equal(r.value.backupManifest, path.join(backupDir, 'backup.json'));
+  const manifest = JSON.parse(fs.readFileSync(r.value.backupManifest, 'utf8'));
+  assert.equal(manifest.kind, 'purge');
+  assert.equal(manifest.targets.length, 3);
+  assert.equal(manifest.targets.find((t) => t.id === ID.ar2).hasLog, false);
 });
 
 test('POST /purge {apply:true, orphans:true} 连孤儿清，完全一致', async () => {

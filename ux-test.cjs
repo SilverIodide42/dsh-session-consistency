@@ -112,6 +112,14 @@ const check = (n, c) => { console.log((c ? '✔' : '✖') + ' ' + n); c ? pass++
   check('清理卡显示残留分类', code.includes('purgeBreakArchived') && code.includes('purgeBdText'));
   check('孤儿未勾选时给出提示', code.includes('purgeOrphanHint'));
 
+  // 13. 0.1.3 新增：目标预览 / 批量归档确认 / 超时 / 竞态 / 复制 ID / 体检重试
+  check('清理目标可预览', code.includes('purgePreviewShow') && code.includes('showTargets && purgeTargets.length'));
+  check('批量归档有确认', code.includes('batchArchiveConfirm'));
+  check('请求带超时与 AbortController', code.includes('AbortController') && code.includes('request timed out after'));
+  check('刷新有竞态防护', code.includes('++seq.refresh') && code.includes('my !== seq.refresh'));
+  check('会话 ID 可复制', code.includes('copyIdDone') && code.includes('navigator.clipboard'));
+  check('体检失败可重试', code.includes('onClick: load') && code.includes('L("retry")'));
+
   console.log(`\n${pass}/${pass + fail} 通过`);
   process.exit(fail ? 1 : 0);
 })();

@@ -39,6 +39,10 @@ export const inject = ['webServer']
 const SESSION_FILE = 'session.v4.jsonl.zstd'
 const PROJCACHE_DIR = path.join('storages', 'session_projcache', 'sessions')
 const WORKSPACE_JSON = path.join('storages', 'workspace.json')
+const PLUGIN_VERSION = (() => {
+  try { return JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version }
+  catch { return null }
+})()
 // 会话 ID 两种形态：老版 session-<uuid> 与新版裸 <uuid>（2026-10-25 实测 DSH 新建会话无前缀）
 const UUID_STR = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 const SESSION_ID_RE = new RegExp('^(?:session-)?' + UUID_STR + '$', 'i')
@@ -77,7 +81,10 @@ function scanSessionDirs(dshDir) {
         const fst = fs.statSync(f)
         size = fst.size; mtimeMs = fst.mtimeMs
       } catch { /* dir without the session file still counts */ }
-      out.set(sid, { dir: sDir, workspaceKey: wsKey, mtimeMs, size })
+      // hasLog is the authoritative "the chat log is still here" flag: a session
+      // directory can exist without session.v4.jsonl.zstd (interrupted writes,
+      // manual cleanup) and must not be treated as intact data.
+      out.set(sid, { dir: sDir, workspaceKey: wsKey, hasLog: size !== null, mtimeMs, size })
     }
   }
   return out
@@ -136,18 +143,19 @@ function buildReport(dshDir) {
     const c = cache.get(id) ?? null
     const inIndex = index.activeMap.has(id)
     const hidden = index.archived.has(id)
-    const onDisk = !!d
+    // The session log is the data. A projcache entry or an empty session dir is
+    // metadata only, so it must not upgrade a broken session to active/archived.
+    const hasLog = !!(d && d.hasLog)
+    const onDisk = hasLog
     const inCache = !!c
-    const hasData = onDisk || inCache
     // 归档优先：真实 DSH 数据里 archivedSessionIds 是 sessionIds 的子集，
     // 先判 active 会把所有归档会话误报成 active（归档数恒为 0）。
     let status
-    if (hidden) status = hasData ? 'archived' : 'tombstone'
-    else if (inIndex) status = hasData ? 'active' : 'missing'
+    if (hidden) status = hasLog ? 'archived' : 'tombstone'
+    else if (inIndex) status = hasLog ? 'active' : 'missing'
     else status = 'orphan'
-    // 残留 = 没有会话目录的隐藏会话（只剩缓存/索引）、墓碑、陈旧索引。
-    // 目录还在的归档会话是「用户归档的完整会话」，不参与批量清理。
-    const residual = (status === 'archived' && !onDisk) || status === 'tombstone' || status === 'missing'
+    // 残留 = 墓碑、陈旧索引、以及没有日志的归档；日志还在的归档会话不参与批量清理。
+    const residual = status === 'tombstone' || status === 'missing'
     sessions.push({
       id,
       status,
@@ -202,6 +210,7 @@ function buildPurgePlan(dshDir, { includeOrphans = false } = {}) {
       title: s.title ?? null,
       diskDir: d?.dir ?? null,
       diskSize: d?.size ?? null,
+      hasLog: d?.hasLog === true,
       cacheFile: c?.file ?? null,
     }
   })
@@ -249,15 +258,57 @@ function resolveBackupDir(dshDir, indexFile) {
   return path.join(dshDir, 'backup', `archived-sessions-${backupStamp()}`)
 }
 
+function fileSize(file) {
+  try { return fs.statSync(file).size } catch { return null }
+}
+
 function backupTarget(t, backupDir) {
   if (t.diskDir) {
-    fs.cpSync(t.diskDir, path.join(backupDir, 'sessions', path.basename(t.diskDir)), { recursive: true })
+    const dest = path.join(backupDir, 'sessions', path.basename(t.diskDir))
+    fs.cpSync(t.diskDir, dest, { recursive: true })
+    if (!fs.existsSync(dest)) throw new Error(`backup verification failed: missing ${dest}`)
+    // A session dir without a log is valid residue to purge, but when the log
+    // exists its size must survive the copy — a silently truncated backup would
+    // make the "always back up first" promise false.
+    if (t.hasLog && t.diskSize != null) {
+      const copiedSize = fileSize(path.join(dest, SESSION_FILE))
+      if (copiedSize !== t.diskSize) {
+        throw new Error(`backup verification failed for ${t.id}: log size ${copiedSize} != ${t.diskSize}`)
+      }
+    }
   }
   if (t.cacheFile) {
     const dest = path.join(backupDir, 'projcache', path.basename(t.cacheFile))
     fs.mkdirSync(path.dirname(dest), { recursive: true })
     fs.copyFileSync(t.cacheFile, dest)
+    if (fileSize(dest) !== fileSize(t.cacheFile)) {
+      throw new Error(`backup verification failed for ${t.id}: projcache copy mismatch`)
+    }
   }
+}
+
+/** Auditable record of what a purge/delete actually backed up. */
+function writeBackupManifest(backupDir, kind, plan) {
+  const manifest = {
+    tool: 'dsh-session-consistency',
+    version: PLUGIN_VERSION,
+    kind,
+    createdAt: new Date().toISOString(),
+    indexFile: plan.indexFile,
+    indexBackup: 'workspace.json.before',
+    targets: plan.targets.map(t => ({
+      id: t.id,
+      status: t.status,
+      title: t.title ?? null,
+      sessionDir: t.diskDir ? path.basename(t.diskDir) : null,
+      cacheFile: t.cacheFile ? path.basename(t.cacheFile) : null,
+      diskSize: t.diskSize ?? null,
+      hasLog: t.hasLog === true,
+    })),
+  }
+  const file = path.join(backupDir, 'backup.json')
+  fs.writeFileSync(file, JSON.stringify(manifest, null, 2) + '\n', 'utf8')
+  return file
 }
 
 /** Rewrite workspace.json atomically: a crash must not leave a half-written
@@ -306,6 +357,7 @@ function applyPurge(plan, backupDir) {
   fs.mkdirSync(backupDir, { recursive: true })
   for (const t of plan.targets) backupTarget(t, backupDir)
   fs.copyFileSync(plan.indexFile, path.join(backupDir, 'workspace.json.before'))
+  const manifestFile = writeBackupManifest(backupDir, 'purge', plan)
   for (const t of plan.targets) {
     if (t.diskDir && fs.existsSync(t.diskDir)) fs.rmSync(t.diskDir, { recursive: true, force: true })
     if (t.cacheFile && fs.existsSync(t.cacheFile)) fs.rmSync(t.cacheFile, { force: true })
@@ -321,6 +373,7 @@ function applyPurge(plan, backupDir) {
     removedSessionIds: removed.removedSessionIds,
     removedPinned: removed.removedPinned,
     backupDir,
+    backupManifest: manifestFile,
   }
 }
 
@@ -350,6 +403,7 @@ function buildDeletePlan(dshDir, ids, { includeUnhidden = false } = {}) {
       title: s.title ?? null,
       diskDir: d?.dir ?? null,
       diskSize: d?.size ?? null,
+      hasLog: d?.hasLog === true,
       cacheFile: c?.file ?? null,
     })
   }
@@ -373,6 +427,7 @@ function applyDelete(plan, backupDir) {
   fs.mkdirSync(backupDir, { recursive: true })
   for (const t of plan.targets) backupTarget(t, backupDir)
   fs.copyFileSync(plan.indexFile, path.join(backupDir, 'workspace.json.before'))
+  const manifestFile = writeBackupManifest(backupDir, 'delete', plan)
   let removedDirs = 0
   let removedCache = 0
   for (const t of plan.targets) {
@@ -392,6 +447,7 @@ function applyDelete(plan, backupDir) {
     removedSessionIds: removed.removedSessionIds,
     removedPinned: removed.removedPinned,
     backupDir,
+    backupManifest: manifestFile,
   }
 }
 

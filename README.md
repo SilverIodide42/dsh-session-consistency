@@ -30,7 +30,7 @@ DSH 把会话数据存在**三个地方**，任何一处不同步都会导致「
 | 会话 · 统计条 | 总数 + 五状态（active / archived 残留 / tombstone / missing / orphan，带色点） | `GET /api/status` |
 | 会话 · 统一会话列表 | 三维过滤（可见性 × 状态 × 文本搜索标题/ID）+ 行内归档/恢复 + 勾选；归档会话在同一列表内筛选 | — |
 | 会话 · 批量操作 | 勾选后浮出批量条：归档 / 恢复 / 删除选中 / 清空选择 | `POST /api/archive`、`POST /api/delete` |
-| 会话 · 清理 | 备份 + 清理残留：墓碑 / 陈旧索引 / 缺会话目录的归档（可勾选连孤儿）；恒先备份 | `GET /api/plan`、`POST /api/purge` |
+| 会话 · 清理 | 备份 + 清理残留：墓碑 / 陈旧索引 / 缺日志的归档（可勾选连孤儿）；可展开预览目标；恒先备份 | `GET /api/plan`、`POST /api/purge` |
 | 体检 | 工作区健康分 + 磁盘/重复/引用/备份/tmp（动态加载工作区 `tools/workspace-doctor/lib`，缺失时降级提示） | `GET /api/doctor` |
 | 体检 · AI 修复提示词 | 把体检发现整理成可粘贴给 AI 的修复提示词，一键复制 | `buildDoctorPrompt`（client 纯函数） |
 
@@ -46,14 +46,14 @@ DSH 把会话数据存在**三个地方**，任何一处不同步都会导致「
 
 ### 方式一：下载预打包文件（推荐）
 
-从 [Releases](https://github.com/SilverIodide42/dsh-session-consistency/releases/latest) 下载 `dsh-session-consistency-0.1.2.tgz`，解压到 DSH profile 的 `node_modules`：
+从 [Releases](https://github.com/SilverIodide42/dsh-session-consistency/releases/latest) 下载 `dsh-session-consistency-0.1.3.tgz`，解压到 DSH profile 的 `node_modules`：
 
 ```powershell
 $dst = "$env:USERPROFILE\.dsh\profiles\desktop\node_modules\dsh-session-consistency"
 New-Item -ItemType Directory -Force -Path $dst | Out-Null
 $tmp = Join-Path $env:TEMP ("dsh-consistency-" + [guid]::NewGuid())
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
-tar -xzf dsh-session-consistency-0.1.2.tgz -C $tmp
+tar -xzf dsh-session-consistency-0.1.3.tgz -C $tmp
 Copy-Item "$tmp\package\*" $dst -Recurse -Force
 ```
 
@@ -62,7 +62,7 @@ Copy-Item "$tmp\package\*" $dst -Recurse -Force
 ```bash
 dsh plugin --profile desktop add github:SilverIodide42/dsh-session-consistency
 # 或固定版本：
-pnpm add github:SilverIodide42/dsh-session-consistency#v0.1.2
+pnpm add github:SilverIodide42/dsh-session-consistency#v0.1.3
 ```
 
 ### 方式三：从源码复制（开发调试）
@@ -120,13 +120,28 @@ Copy-Item index.js,client.js,cordis.patch.yml,package.json,icon.svg,README.md,LI
 ```powershell
 node plugin-test.mjs    # 宿主半身 10 项（假 webServer + 真 HTTP + 假 .dsh 树，含 403/404 围栏、原子写入）
 node client-smoke.mjs   # 浏览器半身冒烟 2 项（假 ModuleLoader + 假 React + dsh 风格断言）
-node delete-test.cjs    # 永久删除 17 项（dry-run 只读/护栏拒绝未归档/三处删除/备份完整/includeUnhidden/空 ids/pinned 清理）
+node delete-test.cjs    # 永久删除 19 项（dry-run 只读/护栏拒绝未归档/三处删除/备份完整/清单校验/includeUnhidden/空 ids/pinned 清理）
 node delete-ui-test.cjs # 列表 UI 13 项（合并列表/勾选框计数/统计条/批量条/仅孤儿时开关可见）
-node ux-test.cjs        # 交互体验 16 项（排序/空态出口/静默刷新/快捷键/无内联样式/删除预览/无数据禁用归档）
+node ux-test.cjs        # 交互体验 22 项（排序/空态出口/静默刷新/快捷键/无内联样式/删除预览/超时/竞态/复制 ID/体检重试）
 node integ-check.cjs    # 集成验证 8 项（真宿主路由 + 假 React 全链路渲染）
 ```
 
-合计 **66 项**。
+合计 **74 项**。
+
+## 0.1.3 改进
+
+后端：
+
+- **会话日志是唯一“数据在位”凭证**：目录存在但 `session.v4.jsonl.zstd` 缺失（或只剩 projcache）不再算 `archived` / `active`，而是 `tombstone` / `missing`，可被清理；空目录同样纳入备份。
+- **备份可审计**：每次 purge/delete 在备份目录写 `backup.json`（版本、类别、目标 id/状态/是否含日志/目录名/缓存名），并逐个目标校验副本大小；校验失败直接中止，不删任何数据。
+- `delete`/`purge` 返回值新增 `backupManifest` 路径。
+
+前端：
+
+- **清理目标可预览**：展开后逐条显示状态、标题、ID、大小，以及“无日志 / 有缓存”标记。
+- **批量归档增加确认**（会触发宿主 `stopActivity`），避免一次误归档一批运行中的会话。
+- **请求超时 + 竞态防护**：读请求 30s、写请求 180s；递增序号保证慢响应不覆盖新数据。
+- 每行新增「复制 ID」；体检失败可就地「重试」；移除无用的 `selectAllHidden` 死代码。
 
 ## 0.1.2 修复与优化
 

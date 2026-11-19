@@ -113,7 +113,6 @@ window.__ModuleLoader__.load({
 			deleteNothingEligible: "选中的会话都不在归档中；先归档才能永久删除，或改用「清理残留」。",
 			deleteDone: "已删除 {n} 个会话（释放 {size}），备份在 {dir}",
 			deleteNothing: "没有勾选任何会话。",
-			selectAllHidden: "全选隐藏会话",
 			selectAllShown: "全选当前筛选结果",
 			searchHint: "搜索标题或 ID（Ctrl+F）",
 			sortTime: "最近",
@@ -123,6 +122,16 @@ window.__ModuleLoader__.load({
 			dismiss: "关闭",
 			clearSelection: "清空选择",
 			selected: "已选 {n}",
+			purgePreviewShow: "查看目标",
+			purgePreviewHide: "收起目标",
+			purgePreviewMore: "… 还有 {n} 个",
+			noLog: "无日志",
+			hasCache: "有缓存",
+			batchArchiveConfirm: "确认归档 {n} 个会话？运行中的会话会被宿主先停止（stopActivity）。",
+			copyId: "复制 ID",
+			copyIdDone: "已复制会话 ID",
+			copyFail: "复制失败，请手动选择",
+			retry: "重试",
 			deleteIndexOnly: "（其中 {n} 个已被 DSH 回收数据，仅剩索引残留——删除只清理索引，不释放空间）",
 			search: "搜索标题或 ID…",
 			batchArchive: "归档选中",
@@ -209,7 +218,6 @@ window.__ModuleLoader__.load({
 			deleteNothingEligible: "None of the selected sessions is archived; archive them first, or use 'Purge residue'.",
 			deleteDone: "Deleted {n} session(s) ({size}); backup at {dir}",
 			deleteNothing: "Nothing checked.",
-			selectAllHidden: "Select all hidden",
 			selectAllShown: "Select all shown",
 			searchHint: "Search title or ID (Ctrl+F)",
 			sortTime: "Recent",
@@ -219,6 +227,16 @@ window.__ModuleLoader__.load({
 			dismiss: "Dismiss",
 			clearSelection: "Clear",
 			selected: "{n} selected",
+			purgePreviewShow: "Show targets",
+			purgePreviewHide: "Hide targets",
+			purgePreviewMore: "… {n} more",
+			noLog: "no log",
+			hasCache: "cache",
+			batchArchiveConfirm: "Archive {n} session(s)? The host will stop running work in them first (stopActivity).",
+			copyId: "Copy ID",
+			copyIdDone: "Session ID copied",
+			copyFail: "Copy failed — select it manually",
+			retry: "Retry",
 			deleteIndexOnly: "({n} of these were already reclaimed by DSH, leaving only index entries — deleting cleans the index only, no space freed)",
 			search: "Search title or ID…",
 			batchArchive: "Archive checked",
@@ -386,10 +404,19 @@ window.__ModuleLoader__.load({
 			return (typeof navigator !== "undefined" && navigator.language || "zh").startsWith("zh") ? "返回" : "Back";
 		}
 
-		function api(path, body) {
+		function api(path, body, timeoutMs) {
 			var init = body !== undefined
 				? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }
 				: {};
+			// Reads get 30s, writes (purge/delete backups can be slow) get 180s.
+			var ms = timeoutMs || (body !== undefined ? 180000 : 30000);
+			var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+			var timer = null;
+			if (ctrl) {
+				init.signal = ctrl.signal;
+				timer = setTimeout(function () { try { ctrl.abort(); } catch { /* ignore */ } }, ms);
+			}
+			var clear = function () { if (timer !== null) { clearTimeout(timer); timer = null; } };
 			return fetch("/session-consistency/api/" + path, init).then(function (r) {
 				return r.text().then(function (text) {
 					var j = null;
@@ -398,7 +425,10 @@ window.__ModuleLoader__.load({
 					if (!j || !j.ok) throw new Error((j && j.error && j.error.message) || ("HTTP " + r.status));
 					return j.value;
 				});
-			});
+			}).catch(function (e) {
+				if (e && e.name === "AbortError") throw new Error("request timed out after " + Math.round(ms / 1000) + "s");
+				throw e;
+			}).finally(clear);
 		}
 
 		var STATUS_ORDER = ["active", "archived", "tombstone", "missing", "orphan"];
@@ -465,6 +495,8 @@ window.__ModuleLoader__.load({
 			var reportPair = React.useState(null);
 			var promptPair = React.useState("");
 			var copyPair = React.useState(null);
+			var seqPair = React.useState(function () { return { n: 0 }; });
+			var seq = seqPair[0];
 			var loading = loadingPair[0], setLoading = loadingPair[1];
 			var error = errorPair[0], setError = errorPair[1];
 			var report = reportPair[0], setReport = reportPair[1];
@@ -473,8 +505,14 @@ window.__ModuleLoader__.load({
 
 			var load = React.useCallback(function () {
 				setLoading(true); setError(null);
-				api("doctor").then(function (r) { setReport(r); setLoading(false); })
-					.catch(function (e) { setError(String(e && e.message || e)); setLoading(false); });
+				var my = ++seq.n;
+				api("doctor").then(function (r) {
+					if (my !== seq.n) return;
+					setReport(r); setLoading(false);
+				}).catch(function (e) {
+					if (my !== seq.n) return;
+					setError(String(e && e.message || e)); setLoading(false);
+				});
 			}, []);
 			React.useEffect(function () { load(); }, [load]);
 
@@ -496,6 +534,8 @@ window.__ModuleLoader__.load({
 			if (loading) return React.createElement("div", { className: "dsm-sm_loading" }, L("checking"));
 			if (error) return React.createElement("div", null,
 				React.createElement("div", { className: "dsm-sm_errorBanner" }, L("error") + ": " + error),
+				React.createElement("div", { className: "dsm-sm_toolbar" },
+					React.createElement(Button, { size: "sm", variant: "primary", onClick: load }, L("retry"))),
 				React.createElement("div", { className: "dsm-sm_foot" }, L("doctorUnavailable")));
 
 			var tone = report.score >= 90 ? "dsm-sm_bActive" : report.score >= 75 ? "dsm-sm_bActive" : report.score >= 60 ? "dsm-sm_bWarn" : "dsm-sm_bError";
@@ -585,6 +625,13 @@ window.__ModuleLoader__.load({
 			var filterPair = React.useState("all");
 			var orphansPair = React.useState(false);
 			var tabPair = React.useState("sessions");
+			// Monotonic request counters: a slow status/plan response must not
+			// overwrite data from a newer request. Stored in a stable object so
+			// incrementing does not trigger a render by itself.
+			var seqPair = React.useState(function () { return { refresh: 0, plan: 0 }; });
+			var seq = seqPair[0];
+			var previewPair = React.useState(false);
+			var showTargets = previewPair[0], setShowTargets = previewPair[1];
 
 			var loading = loadingPair[0], setLoading = loadingPair[1];
 			var refreshing = refreshingPair[0], setRefreshing = refreshingPair[1];
@@ -603,7 +650,9 @@ window.__ModuleLoader__.load({
 				var isSilent = silent === true;
 				if (isSilent) setRefreshing(true);
 				else { setLoading(true); setMessage(null); setError(null); }
+				var my = ++seq.refresh;
 				Promise.all([api("status"), api("plan")]).then(function (vals) {
+					if (my !== seq.refresh) return; // stale response
 					setReport(vals[0]); setPlan(vals[1]);
 					setLoading(false); setRefreshing(false);
 					setSel(function (prev) {
@@ -617,6 +666,7 @@ window.__ModuleLoader__.load({
 						return changed ? next : prev;
 					});
 				}).catch(function (e) {
+					if (my !== seq.refresh) return;
 					setError(String(e && e.message || e)); setLoading(false); setRefreshing(false);
 				});
 			}, []);
@@ -646,10 +696,15 @@ window.__ModuleLoader__.load({
 			}, []);
 
 			var refreshPlan = React.useCallback(function (orphans) {
+				var my = ++seq.plan;
 				api("purge", { orphans: !!orphans }).then(function (p) {
+					if (my !== seq.plan) return;
 					if (p && p.nothingToDo) setPlan({ targets: [], totals: { sessions: 0, diskBytes: 0 } });
 					else setPlan(p);
-				}).catch(function (e) { setError(String(e && e.message || e)); });
+				}).catch(function (e) {
+					if (my !== seq.plan) return;
+					setError(String(e && e.message || e));
+				});
 			}, []);
 
 			React.useEffect(function () {
@@ -712,10 +767,14 @@ window.__ModuleLoader__.load({
 				var next = {}; for (var k in sel) next[k] = sel[k];
 				next[id] = !next[id]; setSel(next);
 			};
-			var selectAllHidden = function () {
-				var next = {};
-				sessions.filter(function (s) { return s.hidden; }).forEach(function (s) { next[s.id] = true; });
-				setSel(next);
+			var copyId = function (id) {
+				var text = String(id);
+				if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+					navigator.clipboard.writeText(text).then(function () { setMessage(L("copyIdDone")); })
+						.catch(function () { setError(L("copyFail")); });
+				} else {
+					setError(L("copyFail"));
+				}
 			};
 			var runDelete = function () {
 				if (selIds.length === 0) { setError(L("deleteNothing")); return; }
@@ -745,6 +804,7 @@ window.__ModuleLoader__.load({
 			var batchBusy = batchBusyPair[0], setBatchBusy = batchBusyPair[1];
 			var batchSetArchived = function (hide) {
 				if (selIds.length === 0) return;
+				if (hide && typeof window !== "undefined" && window.confirm && !window.confirm(fill(L("batchArchiveConfirm"), { n: selIds.length }))) return;
 				setBatchBusy(true); setMessage(null); setError(null);
 				api("archive", { ids: selIds, hide: hide }).then(function (r) {
 					var results = r.results || [];
@@ -867,13 +927,17 @@ window.__ModuleLoader__.load({
 				}
 				var orphanCount = summary ? summary.orphan : 0;
 				var hasPurgeTargets = !!(plan.targets && plan.targets.length);
+				var purgeTargets = (plan && plan.targets) || [];
 				// 只有孤儿、没有墓碑/陈旧索引时，也要能把「连同孤儿」开关露出来
 				var showPurgeGroup = hasPurgeTargets || orphanCount > 0;
 				var purgeCard = plan && React.createElement("section", { className: "dsm-sm_section" },
 					React.createElement("div", { className: "dsm-sm_sectionHead" },
 						React.createElement("h3", { className: "dsm-sm_sectionTitle" },
 							L("purgeTitle"),
-							plan.totals && plan.totals.sessions ? React.createElement("span", { className: "dsm-sm_sectionCount" }, String(plan.totals.sessions)) : null)),
+							plan.totals && plan.totals.sessions ? React.createElement("span", { className: "dsm-sm_sectionCount" }, String(plan.totals.sessions)) : null),
+						hasPurgeTargets && React.createElement("div", { className: "dsm-sm_toolbar" },
+							React.createElement(Button, { size: "sm", variant: "ghost", onClick: function () { setShowTargets(!showTargets); } },
+								showTargets ? L("purgePreviewHide") : L("purgePreviewShow")))),
 					!showPurgeGroup
 						? React.createElement("div", { className: "dsm-sm_empty" }, L("purgeEmpty"))
 						: React.createElement("div", { className: "dsm-sm_prefGroup" },
@@ -890,7 +954,21 @@ window.__ModuleLoader__.load({
 							orphanCount > 0 && !includeOrphans && React.createElement("div", { className: "dsm-sm_prefRow" },
 								React.createElement("span", { className: clsx("dsm-sm_foot", "dsm-sm_footWarn") }, fill(L("purgeOrphanHint"), { n: orphanCount }))),
 							React.createElement("div", { className: "dsm-sm_prefRow" },
-								React.createElement("span", { className: "dsm-sm_foot" }, L("purgePlanHint")))));
+								React.createElement("span", { className: "dsm-sm_foot" }, L("purgePlanHint")))),
+					// 目标预览：清理会永久删除文件，先让用户看到具体是哪几个会话
+					showTargets && purgeTargets.length > 0 && React.createElement("div", { className: clsx("dsm-sm_list", "dsm-sm_listTight") },
+						purgeTargets.slice(0, 20).map(function (t) {
+							return React.createElement("div", { key: t.id, className: "dsm-sm_row" },
+								React.createElement("span", { className: clsx("dsm-sm_badge", STATUS_BADGE[t.status] || "dsm-sm_bMuted") }, L("status_" + t.status)),
+								React.createElement("div", { className: "dsm-sm_rowMain" },
+									React.createElement("div", { className: "dsm-sm_rowTitle" }, t.title || t.id),
+									React.createElement("div", { className: "dsm-sm_rowSub" }, t.id)),
+								React.createElement("div", { className: "dsm-sm_rowValues" },
+									React.createElement("span", { className: "dsm-sm_rowNum" }, t.hasLog ? fmtBytes(t.diskSize) : L("noLog")),
+									t.cacheFile && React.createElement("span", { className: "dsm-sm_rowNumSub" }, L("hasCache"))));
+						}),
+						purgeTargets.length > 20 && React.createElement("div", { className: clsx("dsm-sm_row", "dsm-sm_foot") },
+							fill(L("purgePreviewMore"), { n: purgeTargets.length - 20 }))));
 
 				// 会话列表（统一列表：三维过滤 + 内联归档/删除；隐藏会话直接在这里勾选删除，不再单列一份）
 				var listSection = React.createElement("section", { className: "dsm-sm_section" },
@@ -998,6 +1076,11 @@ window.__ModuleLoader__.load({
 										React.createElement("span", { className: "dsm-sm_rowNum" }, s.onDisk ? fmtBytes(s.diskSize) : "-"),
 										React.createElement("span", { className: "dsm-sm_rowNumSub" }, fmtDate(s.mtime))),
 									React.createElement("div", { className: "dsm-sm_rowActions" },
+										React.createElement(Button, {
+											size: "sm", variant: "ghost",
+											title: L("copyId"),
+											onClick: function () { copyId(s.id); },
+										}, L("copyId")),
 										React.createElement(Button, {
 											size: "sm", variant: "ghost",
 											disabled: isBusy || noData,
